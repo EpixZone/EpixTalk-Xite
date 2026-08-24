@@ -26,7 +26,7 @@ class User {
   }
 
   // Load my votes
-  updateMyVotes(cb) {
+  updateMyVotes(cb, attempt) {
     var user_dir = Page.site_info.xid_directory || Page.site_info.auth_address;
     var query = `
       SELECT 'topic_vote' AS type, topic_uri AS uri FROM json LEFT JOIN topic_vote USING (json_id) WHERE directory = "${user_dir}" AND file_name = 'data.json'
@@ -34,6 +34,19 @@ class User {
       SELECT 'comment_vote' AS type, comment_uri AS uri FROM json LEFT JOIN comment_vote USING (json_id) WHERE directory = "${user_dir}" AND file_name = 'data.json'
     `;
     Page.cmd("dbQuery", [query], (votes) => {
+      if (!Array.isArray(votes)) {
+        // Right after a clone the site db can still be rebuilding, and
+        // dbQuery answers with an error object. Iterating it threw, which
+        // killed the whole boot chain and froze the loading overlay forever.
+        // Retry until the db is queryable, then give up gracefully: the page
+        // must load even if votes could not.
+        if ((attempt || 0) < 20) {
+          this.log("Votes query not ready, retrying:", votes && votes.error);
+          setTimeout(() => this.updateMyVotes(cb, (attempt || 0) + 1), 1500);
+          return;
+        }
+        votes = [];
+      }
       for (let vote of votes) {
         if (vote.type === "topic_vote") {
           this.my_topic_votes[vote.uri] = true;
