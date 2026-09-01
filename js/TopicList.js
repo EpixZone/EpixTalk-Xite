@@ -40,12 +40,12 @@ class TopicList {
     $(selector).off("change").on("change", () => {
       this.setListMode($('input[name=toolbar-topic_list_mode]:checked').val());
     });
-    var mode = UserPrefs.get("topic_list_mode", "brief");
+    var mode = UserPrefs.get("topic_list_mode", "normal");
     $(selector).filter("[value=" + mode + "]").prop("checked", true);
   }
 
   setListMode(new_mode) {
-    var old_mode = UserPrefs.get("topic_list_mode", "brief");
+    var old_mode = UserPrefs.get("topic_list_mode", "normal");
     if (old_mode === new_mode) return;
     this.setUserOption("topic_list_mode", new_mode);
     this.loadTopics("list");
@@ -647,7 +647,7 @@ class TopicList {
     }
 
     // Apply display mode
-    var topic_list_mode = UserPrefs.get("topic_list_mode", "brief");
+    var topic_list_mode = UserPrefs.get("topic_list_mode", "normal");
 
     // Skip the body re-render when nothing changed: re-setting identical html
     // on every sync refresh makes embedded images re-fetch (visible flicker
