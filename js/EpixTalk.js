@@ -352,6 +352,7 @@ class EpixTalk extends EpixFrame {
     this.noteSync(site_info);
     if (site_info.event && site_info.event[0] === "file_done") {
       var changed_file = site_info.event[1];
+      ImageRecovery.fileDone(site_info.address, changed_file);
       // Reload admin settings when admin data changes
       if (changed_file.match(/data\/admin\//)) {
         Moderation.loadAdminSettings(() => {
