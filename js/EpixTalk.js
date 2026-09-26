@@ -494,6 +494,18 @@ class EpixTalk extends EpixFrame {
   }
 
   setSiteinfo(site_info) {
+    // Progress events (a clone or the user-content sync) arrive as
+    // setSiteInfo too, and older nodes send them without the identity fields
+    // and with a bare `content`. Replacing the stored info with one of those
+    // logged the visitor out mid-sync and dropped the admin settings. Merge
+    // over what we already know; a full site info overrides everything.
+    if (this.site_info && site_info) {
+      var merged = Object.assign({}, this.site_info, site_info);
+      if (site_info.content && !site_info.content.settings && this.site_info.content?.settings) {
+        merged.content = this.site_info.content;
+      }
+      site_info = merged;
+    }
     this.site_info = site_info;
     User.checkCert();
   }
