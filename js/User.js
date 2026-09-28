@@ -8,6 +8,10 @@ class User {
     this.xid_tld = null;
     this.xid_avatar = null;
     this.xid_loading = false;
+    this.xid_lookup = null;
+    this.xid_address = null;
+    this.xid_connecting = false;
+    this.xid_connect_callbacks = [];
     this.role = null;  // "owner", "admin", "mod", or null
     this.xid_prompt_shown = false;
 
@@ -60,9 +64,7 @@ class User {
 
   initXidButtons() {
     $(".certselect").on("click", () => {
-      if (!Page.site_info?.auth_address) {
-        Page.cmd("wrapperNotification", ["info", "Please connect to EpixNet first."]);
-      } else if (!this.xid_name) {
+      if (!Page.site_info?.cert_user_id || !this.xid_name) {
         this.triggerCertXid();
       } else {
         var user_dir = Page.site_info.xid_directory || Page.site_info.auth_address;
@@ -88,24 +90,53 @@ class User {
     });
   }
 
+  cancelXidLookup() {
+    var lookup = this.xid_lookup;
+    this.xid_lookup = null;
+    this.xid_loading = false;
+    if (lookup) for (var callback of lookup.callbacks) callback(null, true);
+  }
+
   // Resolve and store my own xID name
   resolveMyXidName(cb) {
-    if (this.xid_loading) {
-      if (cb) cb(this.xid_name);
+    var address = Page.site_info?.auth_address;
+    var cert = Page.site_info?.cert_user_id;
+    if (!address || !cert) {
+      this.cancelXidLookup();
+      this.xid_name = this.xid_tld = this.xid_address = null;
+      if (cb) cb(null);
       return;
     }
+    if (this.xid_lookup?.address === address && this.xid_lookup.cert === cert) {
+      if (cb) this.xid_lookup.callbacks.push(cb);
+      return;
+    }
+    this.cancelXidLookup();
+    var lookup = { address, cert, callbacks: cb ? [cb] : [] };
+    this.xid_lookup = lookup;
     this.xid_loading = true;
-    this.resolveXidName(Page.site_info.auth_address, (name, tld, avatar) => {
+    this.resolveXidName(address, (name, tld, avatar) => {
+      if (this.xid_lookup !== lookup) return;
+      this.xid_lookup = null;
+      this.xid_loading = false;
+      if (Page.site_info?.auth_address !== address || Page.site_info?.cert_user_id !== cert) {
+        for (var callback of lookup.callbacks) callback(null, true);
+        return;
+      }
+      this.xid_address = address;
       this.xid_name = name;
       this.xid_tld = tld;
       this.xid_avatar = avatar || "";
-      this.xid_loading = false;
-      if (cb) cb(name);
+      for (var callback of lookup.callbacks) callback(name);
     });
   }
 
   checkCert(type) {
-    if (Page.site_info.auth_address) {
+    if (!Page.site_info?.cert_user_id) {
+      this.xid_name = this.xid_tld = this.xid_address = null;
+      this.cancelXidLookup();
+    }
+    if (Page.site_info?.auth_address) {
       if (!Page.site_info.cert_user_id) {
         // No cert selected — show connect prompt
         $(".user_name-my").text("Connect xID").css({"color": "#f39c12"});
@@ -120,7 +151,8 @@ class User {
       } else {
         // Cert present: migrate legacy data.json into the merge files (once).
         this.maybeMigrate();
-        this.resolveMyXidName((name) => {
+        this.resolveMyXidName((name, cancelled) => {
+          if (cancelled) return;
           if (name) {
             var display = name + "." + this.xid_tld;
             $(".user_name-my").text(display).css({"color": Text.toColor(display)});
@@ -147,15 +179,32 @@ class User {
       });
     } else {
       $(".comment-new").addClass("comment-nocert");
-      $(".user_name-my").text("Not connected");
+      $(".user_name-my").text("Connect xID");
+      this.showXidFab();
       this.setCurrentSize(0);
     }
   }
 
-  triggerCertXid() {
+  triggerCertXid(cb) {
+    if (cb) this.xid_connect_callbacks.push(cb);
+    if (this.xid_connecting) return;
+    this.xid_connecting = true;
+    this.xid_prompt_shown = true;
+    var finish = (name) => {
+      var callbacks = this.xid_connect_callbacks;
+      this.xid_connect_callbacks = [];
+      this.xid_connecting = false;
+      if (name) for (var callback of callbacks) callback();
+    };
+    // The node owns identity selection and can open the picker before this
+    // page has received siteInfo. Refresh after selection instead of racing
+    // the cert_changed event with a lookup of the previous auth address.
     Page.cmd("certXid", [], (result) => {
-      if (result === "ok") {
-        this.xid_loading = false;
+      if (result !== "ok") { finish(null); return; }
+      Page.cmd("siteInfo", {}, (site_info) => {
+        if (!site_info || site_info.error) { finish(null); return; }
+        Page.setSiteinfo(site_info);
+        if (!site_info.cert_user_id) { finish(null); return; }
         this.resolveMyXidName((name) => {
           if (name) {
             var display = name + "." + this.xid_tld;
@@ -165,8 +214,9 @@ class User {
             Page.cmd("wrapperNotification", ["done", "Connected as " + display]);
             this.showXidTag(display);
           }
+          finish(name);
         });
-      }
+      });
     });
   }
 
@@ -209,32 +259,17 @@ class User {
 
   // Check if user has xID name (required to post)
   requireXid(cb) {
-    if (!Page.site_info?.auth_address) {
-      Page.cmd("wrapperNotification", ["info", "Please connect to EpixNet first."]);
+    if (!Page.site_info?.auth_address || !Page.site_info.cert_user_id) {
+      this.triggerCertXid(cb);
       return false;
     }
-    if (this.xid_name) {
+    if (this.xid_name && this.xid_address === Page.site_info.auth_address) {
       return true;
     }
-    // Try to resolve again in case it was just registered
-    this.xid_loading = false;
-    this.resolveMyXidName((name) => {
-      if (name) {
-        cb();
-      } else {
-        // No xID found — start the cert acquisition flow
-        Page.cmd("certXid", [], (result) => {
-          if (result === "ok") {
-            // Cert acquired, re-resolve and continue
-            this.xid_loading = false;
-            this.resolveMyXidName(function(name2) {
-              if (name2) {
-                cb();
-              }
-            });
-          }
-        });
-      }
+    this.resolveMyXidName((name, cancelled) => {
+      if (cancelled) return;
+      if (name) cb();
+      else this.triggerCertXid(cb);
     });
     return false;
   }
