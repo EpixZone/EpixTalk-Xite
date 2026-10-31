@@ -235,7 +235,7 @@ async function sendTip() {
     openTipModal(currentTipTarget.contentHash, currentTipTarget.xidName, currentTipTarget.xidTld, currentTipTarget.topicUri);
   } catch (err) {
     $(".tip-modal-send").removeClass("loading").text("Send Tip");
-    showTipError(err.reason || err.message || "Transaction failed");
+    showTipError(tipErrorMessage(err));
   }
 }
 
@@ -332,6 +332,25 @@ function formatEpix(val) {
 
 function showTipError(msg) {
   $(".tip-modal-error").text(msg).show();
+}
+
+function tipErrorMessage(err) {
+  if (!err || typeof err !== "object") return "Transaction failed";
+  var rpcError = (err.info && err.info.error) || err.error;
+  if (err.code === "ACTION_REJECTED" || err.code === 4001 || (rpcError && rpcError.code === 4001)) {
+    return "Tip cancelled.";
+  }
+
+  // ethers can wrap a node rejection as "missing revert data". Keep the
+  // decoded contract reason or the RPC message instead of its request dump.
+  var messages = [err.reason, rpcError && rpcError.message, err.shortMessage, err.message];
+  var message = messages.find(function(value) { return typeof value === "string" && value.trim(); });
+  if (!message) return "Transaction failed";
+  if (/insufficient (?:funds|balance)/i.test(message)) {
+    return "Not enough EPIX to cover this tip and the transaction fee.";
+  }
+  message = message.split(/\r?\n/)[0].split(/\s+\((?:action|argument|error|transaction|payload|code)=/)[0].trim();
+  return message.slice(0, 240) || "Transaction failed";
 }
 
 // --- Exports ---
