@@ -4,16 +4,18 @@ const path = require("node:path");
 const test = require("node:test");
 const vm = require("node:vm");
 
+const wrapperOrigin = "https://talk.epix";
+
 test("the current profile requests its display size and ignores a late prior profile", { timeout: 3000 }, async () => {
   const calls = [], slot = { width: 80, images: [] };
   const url = "https://images.example/alice.png";
   const thumbnail = "data:image/png;base64,QQ==";
   const Page = { cmd(name, params, cb) {
-    if (name === "wrapperAvatarThumbnailVersion") cb(1);
+    if (name === "wrapperAvatarThumbnailVersion") cb({ version: 1, origin: wrapperOrigin });
     else calls.push({ name, params, cb });
   } };
   const parent = { postMessage(message, target, [port]) {
-    calls.push({ name: message.cmd, params: message.params, cb(value) { port.postMessage(value); port.close(); } });
+    calls.push({ name: message.cmd, params: message.params, target, cb(value) { port.postMessage(value); port.close(); } });
   } };
   const textNode = { text() { return this; }, attr() { return this; } };
   function $(selector) {
@@ -51,6 +53,7 @@ test("the current profile requests its display size and ignores a late prior pro
   calls[1].cb({ name: "alice", tld: "epix", avatar: url });
   await new Promise(setImmediate);
   const read = calls.find(call => call.name === "wrapperGetAvatarThumbnail");
+  assert.equal(read.target, wrapperOrigin);
   assert.equal(read.params.url, url);
   assert.equal(read.params.size, 80);
   assert.equal(slot.images[0].src, undefined);
