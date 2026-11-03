@@ -243,18 +243,25 @@ class User {
     var textColor = "hsl(" + hue + ", 80%, 80%)";
     var avatar = this.xid_avatar;
     var user_dir = Page.site_info.xid_directory || Page.site_info.auth_address;
-    var tag;
+    var tag = $('<a class="xid-tag nolink"></a>').attr("href", "?User:" + user_dir).css("background-color", bgColor);
     if (avatar) {
-      tag = $('<a href="?User:' + user_dir + '" class="xid-tag nolink" style="background-color: ' + bgColor + ';">' +
-        '<img src="' + avatar + '" style="border: 2px solid ' + textColor + ';" onerror="this.style.display=\'none\'">' +
-        '<span style="color: ' + textColor + ';">' + display + '</span>' +
-      '</a>');
-    } else {
-      tag = $('<a href="?User:' + user_dir + '" class="xid-tag nolink" style="background-color: ' + bgColor + ';">' +
-        '<span style="color: ' + textColor + ';">' + display + '</span>' +
-      '</a>');
+      var image = $('<img alt="">').css("border", "2px solid " + textColor).on("error", function() { $(this).hide(); });
+      tag.append(image);
+      EpixAvatar.bind(image[0], avatar, 26);
     }
+    tag.append($("<span></span>").text(display).css("color", textColor));
     $(".head").append(tag);
+  }
+
+  // Topic and comment rows are refreshed in place. Preserve a loaded image
+  // across sync events and clear it when the current profile has no avatar.
+  showRowAvatar(elem, source) {
+    var image = $(".user-avatar", elem);
+    var url = source || "";
+    if (!image.length || image.data("xid-avatar-url") === url) return;
+    image.data("xid-avatar-url", url).toggle(!!url)
+      .off("error.xidAvatar").on("error.xidAvatar", function() { $(this).hide(); });
+    EpixAvatar.bind(image[0], url, 18);
   }
 
   // Check if user has xID name (required to post)

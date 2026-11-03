@@ -478,7 +478,7 @@
  "inner_path": "content.json",
  "modified": 1786381738,
  "order_policy": {
-  "first_paint": ["index.html","img/favicon.ico","css/all.css","css/font-awesome.css","css/easymde.min.css","js/lib/00-jquery.min.js","js/lib/highlight.pack.js","js/lib/jquery.cssanim.js","js/lib/jquery.csslater.js","js/lib/jquery.easing.1.3.js","js/lib/marked.min.js","js/lib/easymde.min.js","js/lib/epixframe.js","js/lib/epixkit.js","js/lib/ethers.umd.min.js","js/utils/LogMixin.js","js/utils/UserPrefs.js","js/utils/RateLimit.js","js/utils/Text.js","js/utils/Time.js","js/utils/Translate.js","js/utils/Menu.js","js/utils/Follow.js","js/utils/InlineEditor.js","js/utils/Moderation.js","js/utils/Tipping.js","js/utils/MentionPopup.js","js/TopicList.js","js/TopicShow.js","js/UserProfile.js","js/User.js","js/Admin.js","js/EpixTalk.js","js/utils/MarkdownEditor.js"],
+  "first_paint": ["index.html","img/favicon.ico","css/all.css","css/font-awesome.css","css/easymde.min.css","js/lib/00-jquery.min.js","js/lib/highlight.pack.js","js/lib/jquery.cssanim.js","js/lib/jquery.csslater.js","js/lib/jquery.easing.1.3.js","js/lib/marked.min.js","js/lib/easymde.min.js","js/lib/epixframe.js","js/lib/epix-avatar.js","js/lib/epixkit.js","js/lib/ethers.umd.min.js","js/utils/LogMixin.js","js/utils/UserPrefs.js","js/utils/RateLimit.js","js/utils/Text.js","js/utils/Time.js","js/utils/Translate.js","js/utils/Menu.js","js/utils/Follow.js","js/utils/InlineEditor.js","js/utils/Moderation.js","js/utils/Tipping.js","js/utils/MentionPopup.js","js/TopicList.js","js/TopicShow.js","js/UserProfile.js","js/User.js","js/Admin.js","js/EpixTalk.js","js/utils/MarkdownEditor.js"],
   "prefetch": ["dbschema.json"]
  },
  "postmessage_nonce_security": true,

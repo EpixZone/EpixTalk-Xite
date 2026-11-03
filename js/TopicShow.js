@@ -424,21 +424,15 @@ class TopicShow {
     }
 
     // Asynchronously resolve xID name for display
+    elem.data("xid-author", comment.user_address || "");
     if (comment.user_address) {
       User.resolveXidName(comment.user_address, function(name, tld, avatar) {
-        if (name) {
-          $(".user_name", elem).text(name + "." + tld);
-        }
-        if (avatar) {
-          // Only touch src when it changed: re-assigning the same src makes
-          // Gecko re-fetch the image (avatar flicker on every sync refresh)
-          var img = $(".user-avatar", elem);
-          if (img.attr("src") !== avatar) {
-            img.attr("src", avatar).off("error").on("error", function() { $(this).hide(); });
-          }
-          img.css("display", "");
-        }
+        if (elem.data("xid-author") !== comment.user_address) return;
+        if (name) $(".user_name", elem).text(name + "." + tld);
+        User.showRowAvatar(elem, avatar);
       });
+    } else {
+      User.showRowAvatar(elem, "");
     }
 
     var comment_uri = elem.attr("id").replace("comment_", "");

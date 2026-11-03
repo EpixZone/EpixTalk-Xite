@@ -12,10 +12,13 @@ class UserProfile {
     $(".profile-address").text(this.user_address).attr("title", this.user_address);
     $(".profile-name").text(Text.formatUsername(this.user_address));
     this.loadRole();
+    var address = this.user_address;
+    $(".profile-avatar").empty();
     // Determine if user_address is an xID name (contains dot) or a cosmos address
     var isXidName = this.user_address.indexOf(".") !== -1;
     var resolveCmd = isXidName ? "xidResolveName" : "xidResolve";
-    Page.cmd(resolveCmd, [this.user_address], (result) => {
+    Page.cmd(resolveCmd, [address], (result) => {
+      if (this.user_address !== address) return;
       if (result?.name) {
         var display = result.name + "." + result.tld;
         $(".profile-name").text(display);
@@ -24,7 +27,9 @@ class UserProfile {
         Page.cmd("wrapperSetTitle", Text.formatUsername(this.user_address) + " - EpixTalk");
       }
       if (result?.avatar) {
-        $(".profile-avatar").html('<img src="' + result.avatar + '">');
+        var container = $(".profile-avatar");
+        var image = $('<img alt="">').appendTo(container);
+        EpixAvatar.bind(image[0], result.avatar, parseFloat(container.css("width")) || 80);
       }
       if (result?.bio) {
         $(".profile-bio").text(result.bio);

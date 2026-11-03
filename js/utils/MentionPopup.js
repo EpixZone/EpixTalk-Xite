@@ -65,7 +65,9 @@ function renderData(data) {
   $popup.find(".mention-popup-bio").text(data.bio || "");
   $popup.find(".mention-popup-profile").attr("href", "?User:" + displayName);
   if (data.avatar) {
-    $popup.find(".mention-popup-avatar").html('<img src="' + data.avatar + '">').css("display", "");
+    var slot = $popup.find(".mention-popup-avatar").empty().css("display", "");
+    var image = $('<img alt="">').appendTo(slot);
+    EpixAvatar.bind(image[0], data.avatar, 44);
   } else {
     $popup.find(".mention-popup-avatar").html("").css("display", "none");
   }
