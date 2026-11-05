@@ -19,6 +19,8 @@
  var styleInjected = false
  var modalInjected = false
  var modalResolve = null
+ var activeConnection = null
+ var REQUEST_TIMEOUT_MS = 60000
  var STORAGE_KEY = "epixkit_wallet"
 
  function saveWalletPref(info) {
@@ -273,7 +275,7 @@
   var list = document.getElementById("epixkit-list")
   var empty = document.getElementById("epixkit-empty")
   empty.style.display = "none"
-  list.innerHTML = '<div class="epixkit-connecting"><div class="epixkit-spinner"></div>Connecting to ' + escHtml(name) + '...</div>'
+  list.innerHTML = '<div class="epixkit-connecting" role="status"><div class="epixkit-spinner"></div>Connecting to ' + escHtml(name) + '...</div><p style="color:#8b949e;font-size:0.85em;text-align:center;">Check your wallet for a connection or network prompt. Close this dialog to cancel.</p>'
   document.getElementById("epixkit-modal").style.display = "block"
  }
 
@@ -286,12 +288,49 @@
   var modal = document.getElementById("epixkit-modal")
   if (modal) modal.style.display = "none"
   if (modalResolve) { modalResolve(null); modalResolve = null }
+  if (activeConnection) {
+   activeConnection.cancelled = true
+   if (activeConnection.cancelRequest) activeConnection.cancelRequest()
+  }
  }
 
- async function switchChain(provider) {
+ function timeoutMessage() {
+  if (window.origin === "null") {
+   return "The wallet did not respond. This xite's restricted frame can block wallet connections. For now, try the desktop EpixNet browser with a .epix address. Close any pending wallet prompt before retrying."
+  }
+  return "The wallet did not respond. Open your wallet and check for a pending connection or network prompt. Close any pending prompt before retrying."
+ }
+
+ // Wallet requests can remain unresolved when an extension cannot talk to a
+ // sandboxed page. Cancelling only stops this connection attempt; it cannot
+ // dismiss a prompt that the wallet already opened.
+ function request(provider, args, attempt) {
+  return new Promise(function(resolve, reject) {
+   var settled = false
+   var timer
+   function finish(error, result) {
+    if (settled) return
+    settled = true
+    clearTimeout(timer)
+    if (attempt) attempt.cancelRequest = null
+    if (error) reject(error)
+    else resolve(result)
+   }
+   if (attempt && attempt.cancelled) { finish(new Error("User cancelled")); return }
+   var timeout = config && config.requestTimeoutMs
+   if (!(typeof timeout === "number" && Number.isFinite(timeout) && timeout > 0)) timeout = REQUEST_TIMEOUT_MS
+   timer = setTimeout(function() { finish(new Error(timeoutMessage())) }, timeout)
+   if (attempt) attempt.cancelRequest = function() { finish(new Error("User cancelled")) }
+   try {
+    Promise.resolve(provider.request(args)).then(function(result) { finish(null, result) }, function(error) { finish(error) })
+   } catch (error) { finish(error) }
+  })
+ }
+
+ async function switchChain(provider, attempt) {
   if (!config || !config.chainId) return
   try {
-   await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: config.chainId }] })
+   await request(provider, { method: "wallet_switchEthereumChain", params: [{ chainId: config.chainId }] }, attempt)
   } catch (err) {
    if (err.code === 4902) {
     var params = { chainId: config.chainId }
@@ -299,7 +338,7 @@
     if (config.rpcUrls) params.rpcUrls = config.rpcUrls
     if (config.blockExplorerUrls) params.blockExplorerUrls = config.blockExplorerUrls
     if (config.nativeCurrency) params.nativeCurrency = config.nativeCurrency
-    await provider.request({ method: "wallet_addEthereumChain", params: [params] })
+    await request(provider, { method: "wallet_addEthereumChain", params: [params] }, attempt)
    } else {
     throw err
    }
@@ -322,11 +361,16 @@
   },
 
   connect: async function() {
+   if (activeConnection || modalResolve) throw new Error("A wallet connection is already in progress")
+   var attempt = { cancelled: false, cancelRequest: null }
+   activeConnection = attempt
+   try {
    // Re-request providers in case wallets loaded after page init
    window.dispatchEvent(new Event("eip6963:requestProvider"))
 
    // Let late wallets announce
    await settle()
+   if (attempt.cancelled) throw new Error("User cancelled")
 
    var wallets = getWalletListInternal()
 
@@ -354,13 +398,15 @@
     var raw = selected.provider
 
     // Request accounts
-    await raw.request({ method: "eth_requestAccounts" })
+    await request(raw, { method: "eth_requestAccounts" }, attempt)
 
     // Switch chain
-    await switchChain(raw)
+    await switchChain(raw, attempt)
 
     // Get the connected address
-    var accounts = await raw.request({ method: "eth_accounts" })
+    var accounts = await request(raw, { method: "eth_accounts" }, attempt)
+    if (attempt.cancelled) throw new Error("User cancelled")
+    if (!accounts || !accounts.length) throw new Error("The wallet did not share an account. Unlock it and approve the connection, then try again.")
     var address = accounts[0]
 
     // Store state + remember wallet choice
@@ -381,12 +427,11 @@
      walletIcon: selected.info.icon
     }
    } catch (err) {
-    showError(err.message || "Connection failed")
-    setTimeout(function() {
-     var modal = document.getElementById("epixkit-modal")
-     if (modal) modal.style.display = "none"
-    }, 3000)
+    if (!attempt.cancelled) showError(err.message || "Connection failed")
     throw err
+   }
+   } finally {
+    if (activeConnection === attempt) activeConnection = null
    }
   },
 
@@ -404,7 +449,7 @@
    try {
     var raw = saved.provider
     // Silent check - no popup, just see if already authorized
-    var accounts = await raw.request({ method: "eth_accounts" })
+    var accounts = await request(raw, { method: "eth_accounts" })
     if (!accounts || accounts.length === 0) return null
 
     await switchChain(raw)
