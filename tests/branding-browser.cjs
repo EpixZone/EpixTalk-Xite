@@ -40,7 +40,8 @@ const root = path.resolve(__dirname, "..");
             if (window.testFailWrite) { cb({ error: "disk full" }); return; }
             testSettings = JSON.parse(decodeURIComponent(escape(atob(args[1]))));
             testWrites.push(args[0]); cb("ok");
-          } else if (name === "siteSign" || name === "sitePublish") cb("ok");
+          } else if (name === "sitePublish" && window.testDelayPublish) window.testFinishPublish = cb;
+          else if (name === "siteSign" || name === "sitePublish") cb("ok");
           else if (name === "wrapperNotification") testNotices.push(args);
         }
       };
@@ -90,12 +91,35 @@ const root = path.resolve(__dirname, "..");
 
     await page.locator(".admin-branding-title").fill("Community Forum");
     await page.locator(".admin-branding-logo").fill("img/logo.svg");
+    await page.evaluate(() => { testDelayPublish = true; });
+    await page.locator(".admin-branding-save").click();
+    assert.equal(await page.locator(".admin-branding-title").isDisabled(), true);
+    assert.equal(await page.locator(".admin-branding-file").isDisabled(), true);
+    await page.evaluate(() => { testFinishPublish("ok"); testDelayPublish = false; });
+    assert.equal(await page.locator(".admin-branding-title").isEnabled(), true);
+    await page.evaluate(() => {
+      window.testReaders = [];
+      window.FileReader = class { constructor() { testReaders.push(this); } readAsDataURL() {} };
+    });
+    await page.locator(".admin-branding-file").setInputFiles({ name: "first.png", mimeType: "image/png", buffer: Buffer.from("first") });
+    assert.equal(await page.locator(".admin-branding-save").isDisabled(), true);
+    const beforeRead = await page.evaluate(() => testWrites.length);
+    await page.evaluate(() => Branding.save());
+    assert.equal(await page.evaluate(() => testWrites.length), beforeRead);
+    await page.locator(".admin-branding-file").setInputFiles({ name: "second.png", mimeType: "image/png", buffer: Buffer.from("second") });
+    await page.evaluate(() => { testReaders[0].result = "data:image/png;base64,AAAA"; testReaders[0].onload(); });
+    assert.equal(await page.locator(".admin-branding-logo").inputValue(), "img/logo.svg");
+    await page.evaluate(() => { testReaders[1].result = "data:image/png;base64,BBBB"; testReaders[1].onload(); });
+    assert.equal(await page.locator(".admin-branding-logo").inputValue(), "data:image/png;base64,BBBB");
+    assert.equal(await page.locator(".admin-branding-save").isEnabled(), true);
+    await page.locator(".admin-branding-logo").fill("img/logo.svg");
+    console.log("PASS: pending uploads and publishes cannot report unsaved edits as saved");
     for (const theme of ["theme-light", "theme-dark"]) {
       await page.evaluate(theme => { document.body.classList.remove("theme-light", "theme-dark"); document.body.classList.add(theme); }, theme);
       await page.setViewportSize({ width: 390, height: 844 });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, theme + " mobile fits viewport");
       if (process.env.EPIX_SCREENSHOTS) {
-        await page.screenshot({ path: path.join(process.env.EPIX_SCREENSHOTS, "branding-" + theme + ".png"), fullPage: true });
+        await page.screenshot({ path: path.join(process.env.EPIX_SCREENSHOTS, "branding-" + theme + ".png"), fullPage: false });
       }
     }
     console.log("PASS: branding layout fits mobile light and dark themes");

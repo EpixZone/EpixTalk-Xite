@@ -22,9 +22,11 @@ class UserProfile {
       if (result?.name) {
         var display = result.name + "." + result.tld;
         $(".profile-name").text(display);
-        Page.cmd("wrapperSetTitle", display + " - EpixTalk");
+        if (window.Branding) Branding.setTitle(display);
+        else Page.cmd("wrapperSetTitle", display + " - EpixTalk");
       } else {
-        Page.cmd("wrapperSetTitle", Text.formatUsername(this.user_address) + " - EpixTalk");
+        if (window.Branding) Branding.setTitle(Text.formatUsername(this.user_address));
+        else Page.cmd("wrapperSetTitle", Text.formatUsername(this.user_address) + " - EpixTalk");
       }
       if (result?.avatar) {
         var container = $(".profile-avatar");

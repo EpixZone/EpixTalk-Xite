@@ -100,7 +100,8 @@ class TopicShow {
       // The topic query can finish after comments, which initialize their own
       // editors independently. Attach these controls as soon as the topic loads.
       Page.addInlineEditors();
-      Page.cmd("wrapperSetTitle", this.topic.title + " - EpixTalk");
+      if (window.Branding) Branding.setTitle(this.topic.title);
+      else Page.cmd("wrapperSetTitle", this.topic.title + " - EpixTalk");
 
       // Topic-level 3-dot menu
       $(".topic-full > .menu_3dot").off("click").on("click", () => {

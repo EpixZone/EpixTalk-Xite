@@ -494,7 +494,8 @@ class TopicList {
 
       // Set sub-title listing title
       if (this.parent_topic_uri) {
-        Page.cmd("wrapperSetTitle", topic_parent.title + " - EpixTalk");
+        if (window.Branding) Branding.setTitle(topic_parent.title);
+        else Page.cmd("wrapperSetTitle", topic_parent.title + " - EpixTalk");
         $(".topics-title").html("<span class='parent-link'><a href='?Main'>" + _("Main") + "</a> &rsaquo;</span> " + topic_parent.title);
       } else if (search_query.nonempty) {
         $(".topics-title").text(_("Search results"));

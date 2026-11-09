@@ -107,6 +107,8 @@ class Branding {
   }
 
   initAdmin() {
+    this.logoReadVersion = (this.logoReadVersion || 0) + 1;
+    this.readingLogo = false;
     var value = this.normalize(Moderation.admin_settings.branding);
     $(".admin-branding-title").val(value.title);
     $(".admin-branding-logo").val(value.logo);
@@ -115,6 +117,9 @@ class Branding {
     $(".admin-branding-chroma").val(value.accent.chroma * 100);
     $(".admin-branding input").off("input.branding").on("input.branding", () => this.preview());
     $(".admin-branding-file").off("change.branding").on("change.branding", event => {
+      var version = ++this.logoReadVersion;
+      this.readingLogo = false;
+      $(".admin-branding-save").prop("disabled", !!this.saving);
       var file = event.target.files[0];
       if (!file) return;
       if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.size > 128 * 1024) {
@@ -122,8 +127,17 @@ class Branding {
         return;
       }
       var reader = new FileReader();
-      reader.onload = () => { $(".admin-branding-logo").val(reader.result); this.preview(); };
-      reader.onerror = () => $(".admin-branding-status").text("Could not read the image.");
+      this.readingLogo = true;
+      $(".admin-branding-save").prop("disabled", true);
+      $(".admin-branding-status").text("Reading logo...");
+      var finish = () => {
+        if (version !== this.logoReadVersion) return false;
+        this.readingLogo = false;
+        $(".admin-branding-save").prop("disabled", !!this.saving);
+        return true;
+      };
+      reader.onload = () => { if (finish()) { $(".admin-branding-logo").val(reader.result); this.preview(); } };
+      reader.onerror = () => { if (finish()) $(".admin-branding-status").text("Could not read the image."); };
       reader.readAsDataURL(file);
     });
     $(".admin-branding-form").off("submit.branding").on("submit.branding", event => {
@@ -134,15 +148,17 @@ class Branding {
   }
 
   save() {
-    if (!Moderation.isAdmin() || this.saving) return;
+    if (!Moderation.isAdmin() || this.saving || this.readingLogo) return;
     var value;
     try { value = this.readForm(); }
     catch (error) { $(".admin-branding-status").text(error.message); return; }
     this.saving = true;
+    $(".admin-branding input").prop("disabled", true);
     $(".admin-branding-save").prop("disabled", true).addClass("loading");
     $(".admin-branding-status").text("Saving...");
     Admin.updateAdminSettings(data => { data.branding = value; return true; }, success => {
       this.saving = false;
+      $(".admin-branding input").prop("disabled", false);
       $(".admin-branding-save").prop("disabled", false).removeClass("loading");
       if (success) this.apply(value);
       $(".admin-branding-status").text(success ? "Branding saved and published." : "Could not publish branding. Your changes are ready to retry.");
