@@ -1,4 +1,16 @@
 (function() {
+var active_editor = null;
+var transition_timers = [];
+
+function resetTransitions() {
+  transition_timers.forEach(clearTimeout);
+  transition_timers = [];
+}
+
+function afterTransition(callback, delay) {
+  transition_timers.push(setTimeout(callback, delay));
+}
+
 class InlineEditor {
   constructor(elem, getContent, saveContent, getObject) {
     this.elem = elem;
@@ -30,12 +42,21 @@ class InlineEditor {
   }
 
   startEdit() {
+    // The shared toolbar belongs to one editor at a time. Keep its draft if
+    // another menu or repeated click asks to start editing again.
+    if (active_editor) {
+      active_editor.editor.focus();
+      return false;
+    }
+    resetTransitions();
+    active_editor = this;
     this.content_before = this.elem.html(); // Save current to restore on cancel
 
     this.editor = $("<textarea class='editor'></textarea>");
     this.editor.val(this.getContent(this.elem, "raw"));
     this.elem.after(this.editor);
-    $(".editbg").css("display", "block").cssLater("opacity", 0.9, 10);
+    $(".editbg").css("display", "block");
+    afterTransition(() => $(".editbg").css("opacity", 0.9), 10);
     this.elem.html(Array.from({length: 50}, (_, i) => i + 1).join("fill the width")); // To make sure we span the editor as far as we can
     this.copyStyle(this.elem, this.editor); // Copy elem style to editor
     this.elem.html(this.content_before); // Restore content
@@ -50,7 +71,8 @@ class InlineEditor {
 
     $(".editable-edit").css("display", "none"); // Hide all edit button until its not finished
 
-    $(".editbar").css("display", "inline-block").addClassLater("visible", 10);
+    $(".editbar").css("display", "inline-block");
+    afterTransition(() => $(".editbar").addClass("visible"), 10);
     $(".publishbar").css("opacity", 0); // Hide publishbar
     $(".editbar .object").text(this.getObject(this.elem).data("object") + "." + this.elem.data("editable"));
     $(".editbar .button").removeClass("loading");
@@ -74,25 +96,36 @@ class InlineEditor {
   }
 
   stopEdit() {
+    if (active_editor !== this) return;
+    resetTransitions();
+    active_editor = null;
     if (this.editor) {
       this.editor.remove();
     }
     this.editor = null;
     this.elem.css("display", "");
-    $(".editbg").css("opacity", 0).cssLater("display", "none", 300);
+    $(".editbg").css("opacity", 0);
+    afterTransition(() => $(".editbg").css("display", "none"), 300);
 
     $(".editable-edit").css("display", ""); // Show edit buttons
 
-    $(".editbar").cssLater("display", "none", 1000).removeClass("visible"); // Hide editbar
+    $(".editbar").removeClass("visible"); // Hide editbar
+    afterTransition(() => $(".editbar").css("display", "none"), 1000);
     $(".publishbar").css("opacity", 1); // Show publishbar
 
     window.onbeforeunload = null;
   }
 
   saveEdit() {
-    var content = this.editor.val();
+    if (!this.editor || this.saving) return false;
+    var editor = this.editor;
+    var content = editor.val();
+    this.saving = true;
     $(".editbar .save").addClass("loading");
     this.saveContent(this.elem, content, (content_html) => {
+      this.saving = false;
+      // A delayed save must not close an editor opened after canceling it.
+      if (this.editor !== editor) return;
       if (content_html) { // File write ok
         $(".editbar .save").removeClass("loading");
         this.stopEdit();
@@ -110,11 +143,19 @@ class InlineEditor {
   }
 
   deleteObject() {
+    if (this.deleting) return false;
+    this.deleting = true;
     var object_type = this.getObject(this.elem).data("object").split(":")[0];
-    Page.cmd("wrapperConfirm", ["Are you sure you sure to delete this " + object_type + "?", "Delete"], (confirmed) => {
-      $(".editbar .delete").addClass("loading");
-      Page.saveContent(this.getObject(this.elem), null, () => {
-        this.stopEdit();
+    Page.cmd("wrapperConfirm", ["Are you sure you want to delete this " + object_type + "?", "Delete"], (confirmed) => {
+      if (!confirmed) {
+        this.deleting = false;
+        return;
+      }
+      if (active_editor === this) $(".editbar .delete").addClass("loading");
+      Page.saveContent(this.getObject(this.elem), null, (saved) => {
+        this.deleting = false;
+        if (active_editor === this) $(".editbar .delete").removeClass("loading");
+        if (saved) this.stopEdit();
       });
     });
     return false;
