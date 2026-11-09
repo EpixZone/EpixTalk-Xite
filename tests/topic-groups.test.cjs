@@ -77,3 +77,50 @@ test("empty nested groups appear once and populated groups are not duplicated", 
     assert.equal(rows.filter(row => row.row_topic_uri === "2_alice.epix").length, 1);
   } finally { db.close(); }
 });
+
+function uris(db, parent, search) {
+  return db.prepare(listing(parent, search)).all().map(row => row.row_topic_uri).sort();
+}
+
+test("root group searches honor words, authors, and topic/group types", () => {
+  const db = database();
+  try {
+    add(db, 1, "Garden group");
+    add(db, 2, "Music group", null, 3);
+    add(db, 3, "Garden topic", null, 1, null);
+    assert.deepEqual(uris(db, null, "Garden type:groups"), ["1_alice.epix"]);
+    assert.deepEqual(uris(db, null, "Garden type:topics"), ["3_alice.epix"]);
+    assert.deepEqual(uris(db, null, "author:bob type:group"), ["2_bob.epix"]);
+    assert.deepEqual(uris(db, null, "unmatched"), []);
+  } finally { db.close(); }
+});
+
+test("nested searches filter children but retain parent metadata", () => {
+  const db = database();
+  try {
+    add(db, 1, "Parent");
+    add(db, 2, "Garden group", "1_alice.epix");
+    add(db, 3, "Music group", "1_alice.epix", 3);
+    add(db, 4, "Garden topic", "1_alice.epix", 1, null);
+    assert.deepEqual(uris(db, "1_alice.epix", "Garden"), ["1_alice.epix", "2_alice.epix", "4_alice.epix"]);
+    assert.deepEqual(uris(db, "1_alice.epix", "unmatched"), ["1_alice.epix"]);
+    assert.deepEqual(uris(db, "1_alice.epix", "author:bob"), ["1_alice.epix", "3_bob.epix"]);
+    assert.deepEqual(uris(db, "1_alice.epix", "type:group"), ["1_alice.epix", "2_alice.epix", "3_bob.epix"]);
+    assert.deepEqual(uris(db, "1_alice.epix", "type:topics"), ["1_alice.epix", "4_alice.epix"]);
+    assert.deepEqual(uris(db, "1_alice.epix", "date-after:2099-01-01"), ["1_alice.epix"]);
+  } finally { db.close(); }
+});
+
+test("comment thresholds retain parent metadata while filtering empty and populated groups", () => {
+  const db = database();
+  try {
+    add(db, 1, "Parent");
+    add(db, 2, "Empty group", "1_alice.epix");
+    add(db, 3, "Populated group", "1_alice.epix");
+    add(db, 4, "Child", "3_alice.epix", 1, null);
+    db.exec("INSERT INTO comment (comment_id,topic_uri,body,added,json_id) VALUES (5,'4_alice.epix','Hello',1700000005,1)");
+    assert.deepEqual(uris(db, "1_alice.epix", "comments:>0"), ["1_alice.epix", "3_alice.epix"]);
+    assert.deepEqual(uris(db, "1_alice.epix", "comments:>10"), ["1_alice.epix"]);
+    assert.deepEqual(uris(db, "1_alice.epix", "comments:=0"), ["1_alice.epix", "2_alice.epix"]);
+  } finally { db.close(); }
+});
