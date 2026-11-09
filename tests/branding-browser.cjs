@@ -113,7 +113,8 @@ const root = path.resolve(__dirname, "..");
     await page.locator(".admin-branding-save").click();
     assert.equal(await page.locator(".admin-branding-title").isDisabled(), true);
     assert.equal(await page.locator(".admin-branding-file").isDisabled(), true);
-    await page.evaluate(() => { testFinishPublish("ok"); testDelayPublish = false; });
+    await page.evaluate(() => { testSettings.branding.title = "Newer concurrent title"; testFinishPublish("ok"); testDelayPublish = false; });
+    assert.equal(await page.locator(".logo-title").textContent(), "Newer concurrent title", "publication completion must keep the latest accepted branding");
     assert.equal(await page.locator(".admin-branding-title").isEnabled(), true);
     await page.evaluate(() => {
       window.testReaders = [];

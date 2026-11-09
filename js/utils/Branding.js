@@ -160,7 +160,7 @@ class Branding {
       this.saving = false;
       $(".admin-branding input").prop("disabled", false);
       $(".admin-branding-save").prop("disabled", false).removeClass("loading");
-      if (committed) this.apply(value);
+      if (committed) this.apply(Moderation.admin_settings.branding);
       $(".admin-branding-status").text(success ? "Branding saved." : committed ? "Branding saved locally. Publishing failed; retry when ready." : "Branding was not saved. Your changes are ready to retry.");
     });
   }
