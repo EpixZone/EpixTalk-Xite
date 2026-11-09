@@ -42,6 +42,9 @@ class InlineEditor {
   }
 
   startEdit() {
+    // A confirmed deletion can finish after the user cancels editing. Do not
+    // accept another draft on that object while its removal is pending.
+    if (this.getObject(this.elem).data("delete-pending")) return false;
     // The shared toolbar belongs to one editor at a time. Keep its draft if
     // another menu or repeated click asks to start editing again.
     if (active_editor) {
@@ -143,17 +146,20 @@ class InlineEditor {
   }
 
   deleteObject() {
-    if (this.deleting) return false;
-    this.deleting = true;
-    var object_type = this.getObject(this.elem).data("object").split(":")[0];
+    var object = this.getObject(this.elem);
+    if (object.data("delete-pending")) return false;
+    object.data("delete-pending", true);
+    var editor = this.editor;
+    var object_type = object.data("object").split(":")[0];
     Page.cmd("wrapperConfirm", ["Are you sure you want to delete this " + object_type + "?", "Delete"], (confirmed) => {
       if (!confirmed) {
-        this.deleting = false;
+        object.removeData("delete-pending");
         return;
       }
       if (active_editor === this) $(".editbar .delete").addClass("loading");
-      Page.saveContent(this.getObject(this.elem), null, (saved) => {
-        this.deleting = false;
+      Page.saveContent(object, null, (saved) => {
+        if (!saved) object.removeData("delete-pending");
+        if (this.editor !== editor) return;
         if (active_editor === this) $(".editbar .delete").removeClass("loading");
         if (saved) this.stopEdit();
       });

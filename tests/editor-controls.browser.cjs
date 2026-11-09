@@ -17,13 +17,26 @@ after(async () => { if (browser) await browser.close(); });
 
 async function fixture(t, { admin = false, author = "alice.epix", initializeEditors = true } = {}) {
   const page = await browser.newPage();
-  t.after(() => page.close());
+  const errors = [];
+  page.on("pageerror", error => errors.push(error.message));
+  t.after(async () => {
+    await page.close();
+    assert.deepEqual(errors, [], "the UI must not raise uncaught errors");
+  });
   const html = fs.readFileSync(path.join(source, "index.html"), "utf8")
     .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
     .replace(/<link\b[^>]*>/gi, "");
-  await page.setContent(html);
+  await page.route("http://forum.test/**", route => {
+    // Keep the test document after a successful delete redirects to ?Main.
+    // A 204 navigation response leaves the current page intact.
+    if (route.request().isNavigationRequest() && route.request().url() === "http://forum.test/") {
+      return route.fulfill({ contentType: "text/html", body: html });
+    }
+    return route.fulfill({ status: 204 });
+  });
+  await page.goto("http://forum.test/");
   await page.addStyleTag({ path: path.join(source, "css/all.css") });
-  for (const name of ["js/lib/00-jquery.min.js", "js/lib/jquery.csslater.js", "js/lib/jquery.cssanim.js"]) {
+  for (const name of ["js/lib/00-jquery.min.js", "js/lib/jquery.csslater.js", "js/lib/jquery.easing.1.3.js", "js/lib/jquery.cssanim.js"]) {
     await page.addScriptTag({ path: path.join(source, name) });
   }
   await page.evaluate(({ admin, author }) => {
@@ -237,4 +250,39 @@ test("a delayed save completion does not close a later edit or erase its draft",
   assert.equal(await page.locator(".topic-full textarea.editor").count(), 1);
   assert.equal(await page.locator(".topic-full textarea.editor").inputValue(), "New unsaved draft");
   assert.notEqual(await page.locator(".editbar").evaluate(el => getComputedStyle(el).display), "none");
+});
+
+
+test("pending deletion blocks new edits until failure or cancellation permits retry", async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    const write = User.editRecordById;
+    User.editRecordById = (...args) => { window.finishDelete = () => write(...args); };
+    const editor = $(".topic-full .body").data("editor");
+    editor.startEdit();
+    editor.deleteObject();
+    editor.cancelEdit();
+    editor.startEdit();
+    $(".topic-full .title-link").data("editor").startEdit();
+  });
+  assert.equal(await page.locator(".topic-full textarea.editor").count(), 0,
+    "a confirmed deletion must not accept a new draft that its completion would discard");
+  await page.evaluate(() => {
+    window.writeSucceeds = false;
+    window.finishDelete();
+    $(".topic-full .body").data("editor").startEdit();
+  });
+  assert.equal(await page.locator(".topic-full textarea.editor").count(), 1,
+    "a failed deletion must allow editing again");
+});
+
+test("a canceled delete releases the object for another edit", async t => {
+  const page = await fixture(t);
+  await page.evaluate(() => {
+    window.confirmation = false;
+    const editor = $(".topic-full .body").data("editor");
+    editor.deleteObject();
+    editor.startEdit();
+  });
+  assert.equal(await page.locator(".topic-full textarea.editor").count(), 1);
 });
