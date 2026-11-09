@@ -36,12 +36,14 @@ const root = path.resolve(__dirname, "..");
         site_info: { settings: {}, content: {} }, onPageLoaded() {},
         cmd(name, args, cb) {
           if (name === "fileGet") cb(JSON.stringify(testSettings));
-          else if (name === "fileWrite") {
+          else if (name === "fileWriteSign") {
             if (window.testFailWrite) { cb({ error: "disk full" }); return; }
-            testSettings = JSON.parse(decodeURIComponent(escape(atob(args[1]))));
-            testWrites.push(args[0]); cb("ok");
-          } else if (name === "sitePublish" && window.testDelayPublish) window.testFinishPublish = cb;
-          else if (name === "siteSign" || name === "sitePublish") cb("ok");
+            if (decodeURIComponent(escape(atob(args.expected_base64))) !== JSON.stringify(testSettings)) { cb({ error: "settings changed" }); return; }
+            testSettings = JSON.parse(decodeURIComponent(escape(atob(args.content_base64))));
+            testWrites.push(args.inner_path); cb("ok");
+          } else if (name === "sitePublish" && window.testFailPublish) cb({ error: "offline" });
+          else if (name === "sitePublish" && window.testDelayPublish) window.testFinishPublish = cb;
+          else if (name === "sitePublish") cb("ok");
           else if (name === "wrapperNotification") testNotices.push(args);
         }
       };
@@ -65,7 +67,7 @@ const root = path.resolve(__dirname, "..");
     await page.waitForFunction(() => !Branding.readingLogo);
     assert.equal(await page.locator(".admin-branding-preview-title").textContent(), "Community <Forum>");
     await page.locator(".admin-branding-save").click();
-    assert.equal(await page.locator(".admin-branding-status").textContent(), "Branding saved and published.");
+    assert.equal(await page.locator(".admin-branding-status").textContent(), "Branding saved.");
     assert.equal(await page.locator(".logo-title").textContent(), "Community <Forum>");
     assert.equal(await page.title(), "Admin - Community <Forum>");
     await page.waitForFunction(() => document.querySelector(".head .logo img").naturalWidth === 1);
@@ -86,6 +88,14 @@ const root = path.resolve(__dirname, "..");
     await page.evaluate(() => { testFailWrite = false; });
     await page.locator(".admin-branding-save").click();
     assert.equal(await page.locator(".logo-title").textContent(), "Retry title");
+    await page.evaluate(() => { testFailPublish = true; });
+    await page.locator(".admin-branding-title").fill("Locally saved title");
+    await page.locator(".admin-branding-save").click();
+    assert.match(await page.locator(".admin-branding-status").textContent(), /saved locally.*Publishing failed/);
+    assert.equal(await page.locator(".logo-title").textContent(), "Locally saved title");
+    await page.evaluate(() => { testFailPublish = false; });
+    await page.locator(".admin-branding-save").click();
+    assert.equal(await page.locator(".admin-branding-status").textContent(), "Branding saved.");
     await page.evaluate(() => { testRole = "mod"; });
     const writes = await page.evaluate(() => testWrites.length);
     await page.locator(".admin-branding-title").fill("Unauthorized");
@@ -95,7 +105,7 @@ const root = path.resolve(__dirname, "..");
     await page.locator(".admin-branding-logo").fill("javascript:alert(1)");
     await page.locator(".admin-branding-save").click();
     assert.equal(await page.evaluate(() => testWrites.length), writes);
-    console.log("PASS: save failures can be retried and invalid or unauthorized changes cannot write");
+    console.log("PASS: rejected saves preserve branding; publication failures retain signed local branding; retries work");
 
     await page.locator(".admin-branding-title").fill("Community Forum");
     await page.locator(".admin-branding-logo").fill("img/logo.svg");

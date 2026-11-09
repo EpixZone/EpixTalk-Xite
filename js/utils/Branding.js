@@ -156,12 +156,12 @@ class Branding {
     $(".admin-branding input").prop("disabled", true);
     $(".admin-branding-save").prop("disabled", true).addClass("loading");
     $(".admin-branding-status").text("Saving...");
-    Admin.updateAdminSettings(data => { data.branding = value; return true; }, success => {
+    Admin.updateAdminSettings(data => { data.branding = value; return true; }, (success, committed) => {
       this.saving = false;
       $(".admin-branding input").prop("disabled", false);
       $(".admin-branding-save").prop("disabled", false).removeClass("loading");
-      if (success) this.apply(value);
-      $(".admin-branding-status").text(success ? "Branding saved and published." : "Could not publish branding. Your changes are ready to retry.");
+      if (committed) this.apply(value);
+      $(".admin-branding-status").text(success ? "Branding saved." : committed ? "Branding saved locally. Publishing failed; retry when ready." : "Branding was not saved. Your changes are ready to retry.");
     });
   }
 }
