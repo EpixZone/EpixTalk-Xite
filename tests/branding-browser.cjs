@@ -58,15 +58,23 @@ const root = path.resolve(__dirname, "..");
     await page.locator(".admin-branding-hue").fill("280");
     await page.locator(".admin-branding-lightness").fill("75");
     await page.locator(".admin-branding-chroma").fill("22");
+    await page.locator(".admin-branding-file").setInputFiles({
+      name: "logo.png", mimeType: "image/png",
+      buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aR1sAAAAASUVORK5CYII=", "base64")
+    });
+    await page.waitForFunction(() => !Branding.readingLogo);
     assert.equal(await page.locator(".admin-branding-preview-title").textContent(), "Community <Forum>");
     await page.locator(".admin-branding-save").click();
     assert.equal(await page.locator(".admin-branding-status").textContent(), "Branding saved and published.");
     assert.equal(await page.locator(".logo-title").textContent(), "Community <Forum>");
     assert.equal(await page.title(), "Admin - Community <Forum>");
+    await page.waitForFunction(() => document.querySelector(".head .logo img").naturalWidth === 1);
+    assert.match(await page.locator(".head .logo img").getAttribute("src"), /^data:image\/png;base64,/);
     assert.deepEqual(await page.evaluate(() => ({ mods: testSettings.mods, pins: testSettings.pinned_topic_uris })), { mods: ["mod.epix"], pins: ["1_alice.epix"] });
     await page.evaluate(() => { Branding.apply(); Moderation.loadAdminSettings(() => {}); Branding.initAdmin(); });
     assert.equal(await page.locator(".admin-branding-title").inputValue(), "Community <Forum>");
     assert.equal(await page.locator(".admin-branding-hue").inputValue(), "280");
+    assert.match(await page.locator(".head .logo img").getAttribute("src"), /^data:image\/png;base64,/);
     console.log("PASS: branding persists, renders title as text, and preserves roles and pins");
 
     await page.evaluate(() => { testFailWrite = true; });
@@ -117,6 +125,7 @@ const root = path.resolve(__dirname, "..");
     for (const theme of ["theme-light", "theme-dark"]) {
       await page.evaluate(theme => { document.body.classList.remove("theme-light", "theme-dark"); document.body.classList.add(theme); }, theme);
       await page.setViewportSize({ width: 390, height: 844 });
+      await page.evaluate(() => window.scrollTo(0, 0));
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, theme + " mobile fits viewport");
       if (process.env.EPIX_SCREENSHOTS) {
         await page.screenshot({ path: path.join(process.env.EPIX_SCREENSHOTS, "branding-" + theme + ".png"), fullPage: false });
