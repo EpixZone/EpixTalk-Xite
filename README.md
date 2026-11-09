@@ -94,5 +94,11 @@ node --test tests/clone-admin.native.cjs
 This check creates a new clone, checks its empty admin settings, and signs its
 first pin through the real backend. Publication is stubbed to keep the check
 local, so it does not test peer delivery. The source xite must contain the new
-admin defaults. Signing the clone's user-permissions manifest during clone
-creation also requires the corresponding EpixNet runtime fix.
+admin defaults. The node must support both signed clone initialization and
+the `fileWriteSign` transaction from [EpixNet #740](https://github.com/EpixZone/EpixNet/pull/740).
+
+Admin saves submit the new settings and the exact previously read bytes in one
+transaction. Rejected signatures and stale edits preserve the stored settings.
+Publishing happens after that signed local commit; a publication failure leaves
+the accepted local change available. Older nodes reject the save with an update
+prompt.
