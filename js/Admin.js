@@ -8,7 +8,8 @@ class Admin {
     }
 
     $(".admin-page").css("display", "block");
-    Page.cmd("wrapperSetTitle", "Admin - EpixTalk");
+    if (window.Branding) { Branding.setTitle("Admin"); Branding.initAdmin(); }
+    else Page.cmd("wrapperSetTitle", "Admin - EpixTalk");
     this.loadRoles();
     this.loadReportedContent();
     Page.onPageLoaded();
