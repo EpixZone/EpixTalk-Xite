@@ -34,6 +34,9 @@ epix1talk58lw26c0cyrtuu8axptne2p6zf33s7xxwu/
 │   └── utils/             # LogMixin, Text, Time, Translate, etc.
 ├── languages/             # da, fa, fr, hu, it, pl, sk, uk, zh, zh-tw
 └── data-default/
+    ├── admin/
+    │   ├── admin-settings.json
+    │   └── content-default.json
     └── users/
         └── content-default.json
 ```
@@ -78,3 +81,18 @@ The checks cover repeated editing, query completion order, delete confirmation
 and failures, avatars during sync, empty and nested groups, admin signing,
 branding persistence and retries, and mobile light/dark layouts. The color tests
 check OKLab lightness, sRGB gamut, and accent text contrast across hues.
+
+To check clone initialization against a running EpixNet node, use an isolated
+test profile with this checkout loaded as its source xite:
+
+```sh
+EPIX_TEST_SOCKET=/path/to/test-profile/admin.sock \
+EPIX_CLONE_SOURCE=epix1... \
+node --test tests/clone-admin.native.cjs
+```
+
+This check creates a new clone, checks its empty admin settings, and signs its
+first pin through the real backend. Publication is stubbed to keep the check
+local, so it does not test peer delivery. The source xite must contain the new
+admin defaults. Signing the clone's user-permissions manifest during clone
+creation also requires the corresponding EpixNet runtime fix.
