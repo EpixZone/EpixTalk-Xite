@@ -297,7 +297,7 @@ class TopicList {
     var search_query = this.parseTopicSearchQuery();
     var where;
     if (this.parent_topic_uri) { // Topic group listing
-      where = "WHERE parent_topic_uri = '" + this.parent_topic_uri + "' OR row_topic_uri = '" + this.parent_topic_uri + "'";
+      where = "WHERE ((parent_topic_uri = '" + this.parent_topic_uri + "' AND topic.type IS NULL) OR row_topic_uri = '" + this.parent_topic_uri + "')";
       if (search_query.nonempty) where += " AND (" + search_query.where + ")";
     } else { // Main listing
       where = "WHERE topic.type IS NULL AND topic.parent_topic_uri IS NULL";
@@ -340,8 +340,8 @@ class TopicList {
 
         SELECT
          COUNT(comment_id) AS comments_num, MAX(comment.added) AS last_comment,
-         MAX(topic_sub.added) AS last_added,
-         CASE WHEN MAX(topic_sub.added) > MAX(comment.added) OR MAX(comment.added) IS NULL THEN MAX(topic_sub.added) ELSE MAX(comment.added) END as last_action,
+         COALESCE(MAX(topic_sub.added), topic.added) AS last_added,
+         MAX(COALESCE(MAX(topic_sub.added), topic.added), COALESCE(MAX(comment.added), topic.added)) AS last_action,
          topic.*,
          topic_creator_content.directory AS topic_creator_user_name,
          topic_creator_content.directory AS topic_creator_address,
@@ -358,7 +358,7 @@ class TopicList {
         LEFT JOIN json AS topic_sub_creator_content ON (topic_sub_creator_content.directory = topic_sub_creator_json.directory AND topic_sub_creator_content.file_name = 'content.json')
         LEFT JOIN comment ON (comment.topic_uri = row_topic_sub_uri AND comment.added < ${Date.now()/1000+120})
         WHERE topic.parent_topic_uri IS NULL AND topic.type = "group" ${search_query.nonempty ? "AND (" + search_query.where + ")" : ""}
-        GROUP BY topic.topic_id
+        GROUP BY topic.topic_id, topic.json_id
         HAVING last_action < ${Date.now()/1000+120} AND ${search_query.having}
       `;
     } else if (this.parent_topic_uri) {
@@ -367,8 +367,8 @@ class TopicList {
 
         SELECT
          COUNT(comment_id) AS comments_num, MAX(comment.added) AS last_comment,
-         MAX(topic_sub.added) AS last_added,
-         CASE WHEN MAX(topic_sub.added) > MAX(comment.added) OR MAX(comment.added) IS NULL THEN MAX(topic_sub.added) ELSE MAX(comment.added) END as last_action,
+         COALESCE(MAX(topic_sub.added), topic.added) AS last_added,
+         MAX(COALESCE(MAX(topic_sub.added), topic.added), COALESCE(MAX(comment.added), topic.added)) AS last_action,
          topic.*,
          topic_creator_content.directory AS topic_creator_user_name,
          topic_creator_content.directory AS topic_creator_address,
@@ -385,7 +385,7 @@ class TopicList {
         LEFT JOIN json AS topic_sub_creator_content ON (topic_sub_creator_content.directory = topic_sub_creator_json.directory AND topic_sub_creator_content.file_name = 'content.json')
         LEFT JOIN comment ON (comment.topic_uri = row_topic_sub_uri AND comment.added < ${Date.now()/1000+120})
         WHERE topic.type = "group" AND topic.parent_topic_uri = '${this.parent_topic_uri}'
-        GROUP BY topic.topic_id
+        GROUP BY topic.topic_id, topic.json_id
         HAVING last_action < ${Date.now()/1000+120} AND ${search_query.having}
       `;
     }
