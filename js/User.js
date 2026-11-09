@@ -502,7 +502,12 @@ class User {
       this.ensureCollections(() => {
         Page.cmd("sitePublish", {"inner_path": this.contentPathFor(this.userDir())}, (res_pub) => {
           this.checkCert("updaterules"); // Update used space
-          if (cb) cb(res_pub === "ok" || res_pub === true);
+          var published = res_pub === "ok" || res_pub === true;
+          if (!published) {
+            var error = res_pub?.error || res_pub || "No response from publishing service.";
+            Page.cmd("wrapperNotification", ["error", "Record saved locally, but publishing failed: " + error]);
+          }
+          if (cb) cb(published);
         });
       });
     });
@@ -521,7 +526,12 @@ class User {
     };
     for (var k in fields) if (fields[k] !== undefined) record[k] = fields[k];
     Page.cmd("recordSign", [record], (signed) => {
-      if (!signed || signed.error) { if (cb) cb(false); return; }
+      if (!signed || signed.error) {
+        var error = signed?.error || "No signature returned.";
+        Page.cmd("wrapperNotification", ["error", "Record was not signed: " + error]);
+        if (cb) cb(false);
+        return;
+      }
       this.saveRecord(collection, signed, cb);
     });
   }
