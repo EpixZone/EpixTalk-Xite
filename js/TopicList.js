@@ -295,14 +295,20 @@ class TopicList {
     if (!cb) cb = false;
     this.logStart("Load topics...");
     var search_query = this.parseTopicSearchQuery();
-    var where;
+    var topic_filter = "topic.type IS NULL";
+    if (!search_query.isTypeEnabled("topic", true)) topic_filter += " AND 0";
+    if (search_query.nonempty) topic_filter += " AND (" + search_query.where + ")";
+    var where, parent_match;
     if (this.parent_topic_uri) { // Topic group listing
-      where = "WHERE parent_topic_uri = '" + this.parent_topic_uri + "' OR row_topic_uri = '" + this.parent_topic_uri + "'";
-      if (search_query.nonempty) where += " AND (" + search_query.where + ")";
+      // The parent supplies the breadcrumb and title even when no child
+      // matches the search. Only child rows receive search filters.
+      parent_match = "row_topic_uri = '" + this.parent_topic_uri + "'";
+      where = "WHERE ((parent_topic_uri = '" + this.parent_topic_uri + "' AND " + topic_filter + ") OR " + parent_match + ")";
     } else { // Main listing
-      where = "WHERE topic.type IS NULL AND topic.parent_topic_uri IS NULL";
-      if (search_query.nonempty) where += " AND (" + search_query.where + ")";
+      where = "WHERE topic.parent_topic_uri IS NULL AND " + topic_filter;
     }
+    var having = "last_action < " + (Date.now()/1000+120) + " AND " + search_query.having;
+    if (parent_match) having = "(" + parent_match + ") OR (" + having + ")";
     var last_elem = $(".topics-list .topic.template");
 
     var sql_sticky;
@@ -331,7 +337,7 @@ class TopicList {
       LEFT JOIN comment ON (comment.topic_uri = row_topic_uri AND comment.added < ${Date.now()/1000+120})
       ${where}
       GROUP BY topic.topic_id, topic.json_id
-      HAVING last_action < ${Date.now()/1000+120} AND ${search_query.having}
+      HAVING ${having}
     `;
 
     if (!this.parent_topic_uri && search_query.isTypeEnabled("group", true)) { // Union topic groups
@@ -340,8 +346,8 @@ class TopicList {
 
         SELECT
          COUNT(comment_id) AS comments_num, MAX(comment.added) AS last_comment,
-         MAX(topic_sub.added) AS last_added,
-         CASE WHEN MAX(topic_sub.added) > MAX(comment.added) OR MAX(comment.added) IS NULL THEN MAX(topic_sub.added) ELSE MAX(comment.added) END as last_action,
+         COALESCE(MAX(topic_sub.added), topic.added) AS last_added,
+         MAX(COALESCE(MAX(topic_sub.added), topic.added), COALESCE(MAX(comment.added), topic.added)) AS last_action,
          topic.*,
          topic_creator_content.directory AS topic_creator_user_name,
          topic_creator_content.directory AS topic_creator_address,
@@ -358,17 +364,17 @@ class TopicList {
         LEFT JOIN json AS topic_sub_creator_content ON (topic_sub_creator_content.directory = topic_sub_creator_json.directory AND topic_sub_creator_content.file_name = 'content.json')
         LEFT JOIN comment ON (comment.topic_uri = row_topic_sub_uri AND comment.added < ${Date.now()/1000+120})
         WHERE topic.parent_topic_uri IS NULL AND topic.type = "group" ${search_query.nonempty ? "AND (" + search_query.where + ")" : ""}
-        GROUP BY topic.topic_id
+        GROUP BY topic.topic_id, topic.json_id
         HAVING last_action < ${Date.now()/1000+120} AND ${search_query.having}
       `;
-    } else if (this.parent_topic_uri) {
+    } else if (this.parent_topic_uri && search_query.isTypeEnabled("group", true)) {
       query += `
         UNION ALL
 
         SELECT
          COUNT(comment_id) AS comments_num, MAX(comment.added) AS last_comment,
-         MAX(topic_sub.added) AS last_added,
-         CASE WHEN MAX(topic_sub.added) > MAX(comment.added) OR MAX(comment.added) IS NULL THEN MAX(topic_sub.added) ELSE MAX(comment.added) END as last_action,
+         COALESCE(MAX(topic_sub.added), topic.added) AS last_added,
+         MAX(COALESCE(MAX(topic_sub.added), topic.added), COALESCE(MAX(comment.added), topic.added)) AS last_action,
          topic.*,
          topic_creator_content.directory AS topic_creator_user_name,
          topic_creator_content.directory AS topic_creator_address,
@@ -384,8 +390,8 @@ class TopicList {
         LEFT JOIN json AS topic_sub_creator_json ON (topic_sub_creator_json.json_id = topic_sub.json_id)
         LEFT JOIN json AS topic_sub_creator_content ON (topic_sub_creator_content.directory = topic_sub_creator_json.directory AND topic_sub_creator_content.file_name = 'content.json')
         LEFT JOIN comment ON (comment.topic_uri = row_topic_sub_uri AND comment.added < ${Date.now()/1000+120})
-        WHERE topic.type = "group" AND topic.parent_topic_uri = '${this.parent_topic_uri}'
-        GROUP BY topic.topic_id
+        WHERE topic.type = "group" AND topic.parent_topic_uri = '${this.parent_topic_uri}' ${search_query.nonempty ? "AND (" + search_query.where + ")" : ""}
+        GROUP BY topic.topic_id, topic.json_id
         HAVING last_action < ${Date.now()/1000+120} AND ${search_query.having}
       `;
     }
@@ -494,7 +500,8 @@ class TopicList {
 
       // Set sub-title listing title
       if (this.parent_topic_uri) {
-        Page.cmd("wrapperSetTitle", topic_parent.title + " - EpixTalk");
+        if (window.Branding) Branding.setTitle(topic_parent.title);
+        else Page.cmd("wrapperSetTitle", topic_parent.title + " - EpixTalk");
         $(".topics-title").html("<span class='parent-link'><a href='?Main'>" + _("Main") + "</a> &rsaquo;</span> " + topic_parent.title);
       } else if (search_query.nonempty) {
         $(".topics-title").text(_("Search results"));

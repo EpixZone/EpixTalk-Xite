@@ -97,7 +97,11 @@ class TopicShow {
     Page.cmd("dbQuery", [this.queryTopic(this.topic_id, this.topic_user_address)], (res) => {
       this.topic = res[0];
       TopicList.applyTopicData($(".topic-full"), this.topic, "show");
-      Page.cmd("wrapperSetTitle", this.topic.title + " - EpixTalk");
+      // The topic query can finish after comments, which initialize their own
+      // editors independently. Attach these controls as soon as the topic loads.
+      Page.addInlineEditors();
+      if (window.Branding) Branding.setTitle(this.topic.title);
+      else Page.cmd("wrapperSetTitle", this.topic.title + " - EpixTalk");
 
       // Topic-level 3-dot menu
       $(".topic-full > .menu_3dot").off("click").on("click", () => {
@@ -159,8 +163,8 @@ class TopicShow {
             });
           }
         }
-        // Admin: Delete topic
-        if (Moderation.isAdmin()) {
+        // Authors already have a delete action. Use moderation for other authors.
+        if (Moderation.isAdmin() && topic.topic_creator_address !== user_dir) {
           menu.addItem(_("Delete topic"), () => {
             if (confirm("Are you sure you want to delete this topic? This action cannot be undone.")) {
               Moderation.deleteContent("topic", topic.row_topic_uri, () => {

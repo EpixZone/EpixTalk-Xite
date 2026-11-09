@@ -232,7 +232,7 @@ class User {
   }
 
   showXidTag(display) {
-    $(".xid-fab, .xid-tag").remove();
+    $(".xid-fab").remove();
     // Compute hue from display name for consistent color
     var hash = 0;
     for (var i = 0; i < display.length; i++) {
@@ -243,14 +243,27 @@ class User {
     var textColor = "hsl(" + hue + ", 80%, 80%)";
     var avatar = this.xid_avatar;
     var user_dir = Page.site_info.xid_directory || Page.site_info.auth_address;
-    var tag = $('<a class="xid-tag nolink"></a>').attr("href", "?User:" + user_dir).css("background-color", bgColor);
-    if (avatar) {
-      var image = $('<img alt="">').css("border", "2px solid " + textColor).on("error", function() { $(this).hide(); });
-      tag.append(image);
-      EpixAvatar.bind(image[0], avatar, 26);
+    // Sync progress refreshes this tag too. Keep its loaded image in place
+    // instead of waiting for another asynchronous thumbnail on each event.
+    var tag = $(".head .xid-tag");
+    if (!tag.length) {
+      tag = $('<a class="xid-tag nolink"><span></span></a>').appendTo(".head");
     }
-    tag.append($("<span></span>").text(display).css("color", textColor));
-    $(".head").append(tag);
+    tag.attr("href", "?User:" + user_dir).css("background-color", bgColor);
+    var image = $("img", tag);
+    if (avatar) {
+      if (!image.length) {
+        image = $('<img alt="">').on("error", function() { $(this).hide(); }).prependTo(tag);
+      }
+      image.css("border", "2px solid " + textColor);
+      if (image.data("xid-avatar-url") !== avatar) {
+        image.data("xid-avatar-url", avatar).show();
+        EpixAvatar.bind(image[0], avatar, 26);
+      }
+    } else {
+      image.remove();
+    }
+    $("span", tag).text(display).css("color", textColor);
   }
 
   // Topic and comment rows are refreshed in place. Preserve a loaded image

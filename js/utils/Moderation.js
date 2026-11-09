@@ -19,6 +19,7 @@ class Moderation {
       } else {
         this.admin_settings = {};
       }
+      if (window.Branding) Branding.apply(this.admin_settings.branding);
       if (cb) cb();
     });
   }

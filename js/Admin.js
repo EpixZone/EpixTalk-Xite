@@ -8,7 +8,8 @@ class Admin {
     }
 
     $(".admin-page").css("display", "block");
-    Page.cmd("wrapperSetTitle", "Admin - EpixTalk");
+    if (window.Branding) { Branding.setTitle("Admin"); Branding.initAdmin(); }
+    else Page.cmd("wrapperSetTitle", "Admin - EpixTalk");
     this.loadRoles();
     this.loadReportedContent();
     Page.onPageLoaded();
@@ -567,15 +568,9 @@ class Admin {
   pinTopic(topic_uri, cb) {
     if (!Moderation.isAdmin()) {
       Page.cmd("wrapperNotification", ["error", "Only admins can pin topics."]);
+      if (cb) cb(false);
       return;
     }
-    // Update local state immediately for responsive UI
-    window.TopicList.topic_pinned_uris[topic_uri] = 1;
-    if (!Moderation.admin_settings.pinned_topic_uris) Moderation.admin_settings.pinned_topic_uris = [];
-    if (!Moderation.admin_settings.pinned_topic_uris.includes(topic_uri)) {
-      Moderation.admin_settings.pinned_topic_uris.push(topic_uri);
-    }
-    if (cb) cb();
     this.updateAdminSettings(function(data) {
       if (!data.pinned_topic_uris) data.pinned_topic_uris = [];
       if (data.pinned_topic_uris.includes(topic_uri)) {
@@ -583,23 +578,18 @@ class Admin {
       }
       data.pinned_topic_uris.push(topic_uri);
       return true;
+    }, (success) => {
+      if (success) window.TopicList.topic_pinned_uris[topic_uri] = 1;
+      if (cb) cb(success);
     });
   }
 
   unpinTopic(topic_uri, cb) {
     if (!Moderation.isAdmin()) {
       Page.cmd("wrapperNotification", ["error", "Only admins can unpin topics."]);
+      if (cb) cb(false);
       return;
     }
-    // Update local state immediately for responsive UI
-    delete window.TopicList.topic_pinned_uris[topic_uri];
-    if (Moderation.admin_settings.pinned_topic_uris) {
-      var idx = Moderation.admin_settings.pinned_topic_uris.indexOf(topic_uri);
-      if (idx >= 0) {
-        Moderation.admin_settings.pinned_topic_uris.splice(idx, 1);
-      }
-    }
-    if (cb) cb();
     this.updateAdminSettings(function(data) {
       if (!data.pinned_topic_uris) data.pinned_topic_uris = [];
       var idx = data.pinned_topic_uris.indexOf(topic_uri);
@@ -608,6 +598,9 @@ class Admin {
         return true;
       }
       return false;
+    }, (success) => {
+      if (success) delete window.TopicList.topic_pinned_uris[topic_uri];
+      if (cb) cb(success);
     });
   }
 
@@ -663,51 +656,70 @@ class Admin {
     });
   }
 
-  // Helper: read data/admin/admin-settings.json, apply modifier, write + sign + publish
+  // Helper: read data/admin/admin-settings.json, apply modifier, write + sign + publish.
+  // The callback reports success on every completion path.
   updateAdminSettings(modifier_fn, cb) {
     var inner_path = "data/admin/admin-settings.json";
+    var fail = (message) => {
+      Page.cmd("wrapperNotification", ["error", message]);
+      if (cb) cb(false);
+    };
     Page.cmd("fileGet", {"inner_path": inner_path, "required": false}, (raw) => {
       var data;
-      if (raw) {
-        try {
-          data = JSON.parse(raw);
-        } catch (e) {
-          data = {"mods": []};
-        }
-      } else {
-        data = {"mods": []};
+      try {
+        data = JSON.parse(raw);
+        if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("Invalid settings");
+      } catch (e) {
+        fail("Could not read admin settings. Existing settings have not been overwritten.");
+        return;
       }
 
-      var should_save = modifier_fn(data);
-      if (!should_save) return;
-
+      var should_save;
+      try {
+        should_save = modifier_fn(data);
+      } catch (e) {
+        fail("Could not update admin settings: " + e.message);
+        return;
+      }
+      var signAndPublish = () => {
+        var admin_content_path = "data/admin/content.json";
+        var sign_params = {"inner_path": admin_content_path};
+        // A fork owner may use an xID that is not an include signer. Use
+        // the stored site key when available; delegated admins use their xID.
+        if (Page.site_info?.privatekey) sign_params.privatekey = "stored";
+        Page.cmd("siteSign", sign_params, (sign_res) => {
+          if (sign_res !== "ok") {
+            fail("Signing error: " + (sign_res?.error || sign_res));
+            return;
+          }
+          // Publish the signature just verified, without selecting a key again.
+          Page.cmd("sitePublish", {"inner_path": admin_content_path, "sign": false}, (pub_res) => {
+            if (pub_res !== "ok") {
+              fail("Publish error: " + (pub_res?.error || pub_res));
+              return;
+            }
+            Page.cmd("wrapperNotification", ["done", "Admin settings saved and published."]);
+            Moderation.loadAdminSettings(() => {
+              this.loadRoles();
+              if (cb) cb(true);
+            });
+          });
+        });
+      };
+      // A previous write may have succeeded before signing or publishing failed.
+      // Retry those steps even when the requested value is already on disk.
+      if (!should_save) {
+        signAndPublish();
+        return;
+      }
       data.modified = Math.floor(Date.now() / 1000);
       var json_raw = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, '\t'))));
       Page.cmd("fileWrite", [inner_path, json_raw], (res) => {
         if (res !== "ok") {
-          Page.cmd("wrapperNotification", ["error", "Failed to write admin settings: " + (res?.error || res)]);
+          fail("Failed to write admin settings: " + (res?.error || res));
           return;
         }
-        // Sign and publish the admin content.json
-        var admin_content_path = "data/admin/content.json";
-        Page.cmd("siteSign", {"inner_path": admin_content_path}, (sign_res) => {
-          if (sign_res !== "ok") {
-            Page.cmd("wrapperNotification", ["error", "Signing error: " + (sign_res?.error || sign_res)]);
-            return;
-          }
-          Page.cmd("sitePublish", {"inner_path": admin_content_path}, (pub_res) => {
-            if (pub_res === "ok") {
-              Page.cmd("wrapperNotification", ["done", "Admin settings saved and published."]);
-              // Reload admin settings and refresh UI
-              Moderation.loadAdminSettings(() => {
-                this.loadRoles();
-                if (cb) cb();
-              });
-            } else {
-              Page.cmd("wrapperNotification", ["error", "Publish error: " + (pub_res?.error || pub_res)]);
-            }
-          });
-        });
+        signAndPublish();
       });
     });
   }
