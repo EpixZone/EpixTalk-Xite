@@ -4,12 +4,19 @@ class Moderation {
     this.reported_topics = {};   // target_uri -> [{report_id, reporter, reason, added}]
     this.reported_comments = {}; // target_uri -> [{report_id, reporter, reason, added}]
     this.admin_settings = {};    // Cached data/admin/admin-settings.json
+    this.admin_settings_load_version = 0;
+    this.admin_settings_callbacks = [];
     this.loaded = false;
   }
 
   // Load admin settings from data/admin/admin-settings.json
   loadAdminSettings(cb) {
+    var version = ++this.admin_settings_load_version;
+    if (cb) this.admin_settings_callbacks.push(cb);
     Page.cmd("fileGet", {"inner_path": "data/admin/admin-settings.json", "required": false}, (raw) => {
+      // A save or file event can start a newer read before this one returns.
+      // Complete all waiting callers with the newest response only.
+      if (version !== this.admin_settings_load_version) return;
       if (raw) {
         try {
           this.admin_settings = JSON.parse(raw);
@@ -20,7 +27,9 @@ class Moderation {
         this.admin_settings = {};
       }
       if (window.Branding) Branding.apply(this.admin_settings.branding);
-      if (cb) cb();
+      var callbacks = this.admin_settings_callbacks;
+      this.admin_settings_callbacks = [];
+      for (let callback of callbacks) callback();
     });
   }
 
