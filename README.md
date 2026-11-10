@@ -34,6 +34,9 @@ epix1talk58lw26c0cyrtuu8axptne2p6zf33s7xxwu/
 │   └── utils/             # LogMixin, Text, Time, Translate, etc.
 ├── languages/             # da, fa, fr, hu, it, pl, sk, uk, zh, zh-tw
 └── data-default/
+    ├── admin/
+    │   ├── admin-settings.json
+    │   └── content-default.json
     └── users/
         └── content-default.json
 ```
@@ -78,3 +81,24 @@ The checks cover repeated editing, query completion order, delete confirmation
 and failures, avatars during sync, empty and nested groups, admin signing,
 branding persistence and retries, and mobile light/dark layouts. The color tests
 check OKLab lightness, sRGB gamut, and accent text contrast across hues.
+
+To check clone initialization against a running EpixNet node, use an isolated
+test profile with this checkout loaded as its source xite:
+
+```sh
+EPIX_TEST_SOCKET=/path/to/test-profile/admin.sock \
+EPIX_CLONE_SOURCE=epix1... \
+node --test tests/clone-admin.native.cjs
+```
+
+This check creates a new clone, checks its empty admin settings, and signs its
+first pin through the real backend. Publication is stubbed to keep the check
+local, so it does not test peer delivery. The source xite must contain the new
+admin defaults. The node must support both signed clone initialization and
+the `fileWriteSign` transaction from [EpixNet #740](https://github.com/EpixZone/EpixNet/pull/740).
+
+Admin saves submit the new settings and the exact previously read bytes in one
+transaction. Rejected signatures and stale edits preserve the stored settings.
+Publishing happens after that signed local commit; a publication failure leaves
+the accepted local change available. Older nodes reject the save with an update
+prompt.

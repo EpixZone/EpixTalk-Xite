@@ -523,13 +523,6 @@ class Admin {
       Page.cmd("wrapperNotification", ["error", "Only admins can add moderators."]);
       return;
     }
-    // Optimistic local update
-    if (!Moderation.admin_settings.mods) Moderation.admin_settings.mods = [];
-    if (!Moderation.admin_settings.mods.includes(address)) {
-      Moderation.admin_settings.mods.push(address);
-    }
-    this.loadRoles();
-    // Persist in background
     this.updateAdminSettings(function(data) {
       if (!data.mods) data.mods = [];
       if (data.mods.includes(address)) {
@@ -545,15 +538,6 @@ class Admin {
       Page.cmd("wrapperNotification", ["error", "Only admins can remove moderators."]);
       return;
     }
-    // Optimistic local update
-    if (Moderation.admin_settings.mods) {
-      var idx = Moderation.admin_settings.mods.indexOf(address);
-      if (idx >= 0) {
-        Moderation.admin_settings.mods.splice(idx, 1);
-      }
-    }
-    this.loadRoles();
-    // Persist in background
     this.updateAdminSettings(function(data) {
       if (!data.mods) data.mods = [];
       var idx = data.mods.indexOf(address);
@@ -568,7 +552,7 @@ class Admin {
   pinTopic(topic_uri, cb) {
     if (!Moderation.isAdmin()) {
       Page.cmd("wrapperNotification", ["error", "Only admins can pin topics."]);
-      if (cb) cb(false);
+      if (cb) cb(false, false);
       return;
     }
     this.updateAdminSettings(function(data) {
@@ -578,16 +562,19 @@ class Admin {
       }
       data.pinned_topic_uris.push(topic_uri);
       return true;
-    }, (success) => {
-      if (success) window.TopicList.topic_pinned_uris[topic_uri] = 1;
-      if (cb) cb(success);
+    }, (success, committed) => {
+      if (committed) {
+        if (Moderation.admin_settings.pinned_topic_uris?.includes(topic_uri)) window.TopicList.topic_pinned_uris[topic_uri] = 1;
+        else delete window.TopicList.topic_pinned_uris[topic_uri];
+      }
+      if (cb) cb(success, committed);
     });
   }
 
   unpinTopic(topic_uri, cb) {
     if (!Moderation.isAdmin()) {
       Page.cmd("wrapperNotification", ["error", "Only admins can unpin topics."]);
-      if (cb) cb(false);
+      if (cb) cb(false, false);
       return;
     }
     this.updateAdminSettings(function(data) {
@@ -598,9 +585,12 @@ class Admin {
         return true;
       }
       return false;
-    }, (success) => {
-      if (success) delete window.TopicList.topic_pinned_uris[topic_uri];
-      if (cb) cb(success);
+    }, (success, committed) => {
+      if (committed) {
+        if (Moderation.admin_settings.pinned_topic_uris?.includes(topic_uri)) window.TopicList.topic_pinned_uris[topic_uri] = 1;
+        else delete window.TopicList.topic_pinned_uris[topic_uri];
+      }
+      if (cb) cb(success, committed);
     });
   }
 
@@ -656,13 +646,13 @@ class Admin {
     });
   }
 
-  // Helper: read data/admin/admin-settings.json, apply modifier, write + sign + publish.
-  // The callback reports success on every completion path.
+  // The settings and their signature commit together. The callback separates
+  // command success from a local commit whose later publication failed.
   updateAdminSettings(modifier_fn, cb) {
     var inner_path = "data/admin/admin-settings.json";
     var fail = (message) => {
       Page.cmd("wrapperNotification", ["error", message]);
-      if (cb) cb(false);
+      if (cb) cb(false, false);
     };
     Page.cmd("fileGet", {"inner_path": inner_path, "required": false}, (raw) => {
       var data;
@@ -681,45 +671,39 @@ class Admin {
         fail("Could not update admin settings: " + e.message);
         return;
       }
-      var signAndPublish = () => {
-        var admin_content_path = "data/admin/content.json";
-        var sign_params = {"inner_path": admin_content_path};
-        // A fork owner may use an xID that is not an include signer. Use
-        // the stored site key when available; delegated admins use their xID.
-        if (Page.site_info?.privatekey) sign_params.privatekey = "stored";
-        Page.cmd("siteSign", sign_params, (sign_res) => {
-          if (sign_res !== "ok") {
-            fail("Signing error: " + (sign_res?.error || sign_res));
-            return;
-          }
-          // Publish the signature just verified, without selecting a key again.
-          Page.cmd("sitePublish", {"inner_path": admin_content_path, "sign": false}, (pub_res) => {
-            if (pub_res !== "ok") {
-              fail("Publish error: " + (pub_res?.error || pub_res));
-              return;
-            }
-            Page.cmd("wrapperNotification", ["done", "Admin settings saved and published."]);
-            Moderation.loadAdminSettings(() => {
-              this.loadRoles();
-              if (cb) cb(true);
-            });
-          });
-        });
+      if (should_save) data.modified = Math.floor(Date.now() / 1000);
+      var encode = value => btoa(unescape(encodeURIComponent(value)));
+      var params = {
+        "inner_path": inner_path,
+        "content_base64": encode(should_save ? JSON.stringify(data, null, '\t') : raw),
+        "expected_base64": encode(raw)
       };
-      // A previous write may have succeeded before signing or publishing failed.
-      // Retry those steps even when the requested value is already on disk.
-      if (!should_save) {
-        signAndPublish();
-        return;
-      }
-      data.modified = Math.floor(Date.now() / 1000);
-      var json_raw = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, '\t'))));
-      Page.cmd("fileWrite", [inner_path, json_raw], (res) => {
+      // Owners use the saved site key; delegated admins use their selected xID.
+      if (Page.site_info?.privatekey) params.privatekey = "stored";
+      Page.cmd("fileWriteSign", params, (res) => {
         if (res !== "ok") {
-          fail("Failed to write admin settings: " + (res?.error || res));
+          var error = res?.error || res;
+          if (!error || /unknown command|unhandled.*command/i.test(String(error))) {
+            fail("This node does not support atomic admin saves. Update EpixNet and retry.");
+          } else {
+            fail("Admin settings were not saved: " + error);
+          }
           return;
         }
-        signAndPublish();
+        // Publication is separate from the signed local commit. Never undo an
+        // accepted edit because peers are unreachable or publishing fails.
+        Page.cmd("sitePublish", {"inner_path": "data/admin/content.json", "sign": false}, (pub_res) => {
+          var success = pub_res === "ok";
+          if (success) {
+            Page.cmd("wrapperNotification", ["done", "Admin settings saved."]);
+          } else {
+            Page.cmd("wrapperNotification", ["error", "Admin settings saved locally, but publishing failed: " + (pub_res?.error || pub_res || "No response.")]);
+          }
+          Moderation.loadAdminSettings(() => {
+            this.loadRoles();
+            if (cb) cb(success, true);
+          });
+        });
       });
     });
   }
