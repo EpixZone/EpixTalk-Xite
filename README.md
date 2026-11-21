@@ -102,3 +102,11 @@ transaction. Rejected signatures and stale edits preserve the stored settings.
 Publishing happens after that signed local commit; a publication failure leaves
 the accepted local change available. Older nodes reject the save with an update
 prompt.
+
+The logo also controls the icon in the EpixNet wrapper and dashboard. SVG uploads
+are decoded as images. The forum signs a square PNG at
+`data/admin/forum-icon.png` alongside the admin settings. When distributing
+this update, sign both the admin manifest and the root manifest to include the
+new icon and its clone default. On an existing clone, the owner's first
+appearance save stages the favicon path in the preserved root manifest. Sign and
+publish that manifest in the wrapper. Later logo changes use the admin signature.

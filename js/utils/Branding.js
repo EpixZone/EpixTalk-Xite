@@ -70,6 +70,7 @@ class Branding {
         image.setAttribute("src", this.current.logo);
       }
     });
+    $('link[rel="icon"]').attr("href", value ? this.current.logo : "img/favicon.ico");
     var accent = this.current.accent;
     var fill = this.color(accent.lightness, accent.chroma, accent.hue);
     var style = document.body.style;
@@ -122,8 +123,9 @@ class Branding {
       $(".admin-branding-save").prop("disabled", !!this.saving);
       var file = event.target.files[0];
       if (!file) return;
-      if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type) || file.size > 128 * 1024) {
-        $(".admin-branding-status").text("Choose a PNG, JPEG, WebP or GIF up to 128 KB.");
+      var svg = file.type === "image/svg+xml" || (!file.type && /\.svg$/i.test(file.name));
+      if ((!svg && !/^image\/(png|jpeg|webp|gif)$/.test(file.type)) || file.size > 128 * 1024) {
+        $(".admin-branding-status").text("Choose a PNG, JPEG, WebP, GIF or SVG up to 128 KB.");
         return;
       }
       var reader = new FileReader();
@@ -136,18 +138,26 @@ class Branding {
         $(".admin-branding-save").prop("disabled", !!this.saving);
         return true;
       };
-      reader.onload = () => { if (finish()) { $(".admin-branding-logo").val(reader.result); this.preview(); } };
+      reader.onload = async () => {
+        try {
+          // Decode SVG in an image context and keep only pixels from an upload.
+          const source = svg ? await ForumIcon.imagePng(reader.result.replace(/^data:[^;,]*/, "data:image/svg+xml"), 256, false) : reader.result;
+          if (finish()) { $(".admin-branding-logo").val(source); this.preview(); }
+        } catch {
+          if (finish()) $(".admin-branding-status").text("Could not read the SVG image.");
+        }
+      };
       reader.onerror = () => { if (finish()) $(".admin-branding-status").text("Could not read the image."); };
       reader.readAsDataURL(file);
     });
     $(".admin-branding-form").off("submit.branding").on("submit.branding", event => {
       event.preventDefault();
-      this.save();
+      return this.save();
     });
     this.preview();
   }
 
-  save() {
+  async save() {
     if (!Moderation.isAdmin() || this.saving || this.readingLogo) return;
     var value;
     try { value = this.readForm(); }
@@ -156,13 +166,29 @@ class Branding {
     $(".admin-branding input").prop("disabled", true);
     $(".admin-branding-save").prop("disabled", true).addClass("loading");
     $(".admin-branding-status").text("Saving...");
-    Admin.updateAdminSettings(data => { data.branding = value; return true; }, (success, committed) => {
+    try {
+      const previous = Moderation.admin_settings.branding;
+      value.favicon = previous?.logo === value.logo && previous.favicon
+        ? previous.favicon : (await ForumIcon.render(value.logo)).split(",")[1];
+      const result = await new Promise(resolve => {
+        Admin.updateAdminSettings(data => { data.branding = value; return true; },
+          (success, committed, error) => resolve({success, committed, error}), ForumIcon.sync);
+      });
+      if (result.committed) this.apply(Moderation.admin_settings.branding);
+      if (result.error) throw new Error("Branding saved locally. " + result.error);
+      if (result.success) {
+        const next = await ForumIcon.configure().catch(error => error.message);
+        $(".admin-branding-status").text(("Branding saved. " + next).trim());
+      } else {
+        $(".admin-branding-status").text(result.committed ? "Branding saved locally. Publishing failed; retry when ready." : "Branding was not saved. Your changes are ready to retry.");
+      }
+    } catch (error) {
+      $(".admin-branding-status").text(error.message);
+    } finally {
       this.saving = false;
       $(".admin-branding input").prop("disabled", false);
       $(".admin-branding-save").prop("disabled", false).removeClass("loading");
-      if (committed) this.apply(Moderation.admin_settings.branding);
-      $(".admin-branding-status").text(success ? "Branding saved." : committed ? "Branding saved locally. Publishing failed; retry when ready." : "Branding was not saved. Your changes are ready to retry.");
-    });
+    }
   }
 }
 window.Branding = new Branding();

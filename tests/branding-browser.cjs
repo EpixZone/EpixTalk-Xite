@@ -24,6 +24,7 @@ const root = path.resolve(__dirname, "..");
     await page.addScriptTag({ path: path.join(root, "js/lib/00-jquery.min.js") });
     await page.evaluate(() => {
       window.LogMixin = {};
+      window.testIcon = "";
       window.testSettings = { mods: ["mod.epix"], pinned_topic_uris: ["1_alice.epix"] };
       window.testWrites = [];
       window.testNotices = [];
@@ -33,9 +34,20 @@ const root = path.resolve(__dirname, "..");
         loadAdminSettings(cb) { this.admin_settings = structuredClone(testSettings); if (window.Branding) Branding.apply(this.admin_settings.branding); cb(); }
       };
       window.Page = {
-        site_info: { settings: {}, content: {} }, onPageLoaded() {},
+        site_info: { address: "fixture", settings: {}, content: { favicon: "data/admin/forum-icon.png" } }, onPageLoaded() {},
         cmd(name, args, cb) {
-          if (name === "fileGet") cb(JSON.stringify(testSettings));
+          if (!cb) return new Promise(resolve => this.cmd(name, args, resolve));
+          if (name === "fileGet" && args.inner_path.endsWith(".png")) cb(testIcon);
+          else if (name === "fileGet" && args.inner_path === "content.json") cb(JSON.stringify(testManifest));
+          else if (name === "fileWrite" && args[0] === "content.json") {
+            window.testManifest = JSON.parse(atob(args[1])); cb("ok");
+          }
+          else if (name === "fileGet") cb(JSON.stringify(testSettings));
+          else if (name === "fileWriteSign" && args.inner_path.endsWith(".png")) {
+            if (window.testFailIcon) { cb({error: "Icon write failed."}); return; }
+            if (args.expected_base64 !== testIcon) throw new Error("Unexpected previous icon bytes.");
+            testIcon = args.content_base64; cb("ok");
+          }
           else if (name === "fileWriteSign") {
             if (window.testFailWrite) { cb({ error: "disk full" }); return; }
             if (decodeURIComponent(escape(atob(args.expected_base64))) !== JSON.stringify(testSettings)) { cb({ error: "settings changed" }); return; }
@@ -48,6 +60,7 @@ const root = path.resolve(__dirname, "..");
         }
       };
     });
+    await page.addScriptTag({ path: path.join(root, "js/utils/ForumIcon.js") });
     if (fs.existsSync(path.join(root, "js/utils/Branding.js"))) await page.addScriptTag({ path: path.join(root, "js/utils/Branding.js") });
     await page.addScriptTag({ path: path.join(root, "js/Admin.js") });
     await page.evaluate(() => { Admin.loadRoles = () => {}; Admin.loadReportedContent = () => {}; Admin.actionShow(); $(".loading-overlay").hide(); });
@@ -67,6 +80,7 @@ const root = path.resolve(__dirname, "..");
     await page.waitForFunction(() => !Branding.readingLogo);
     assert.equal(await page.locator(".admin-branding-preview-title").textContent(), "Community <Forum>");
     await page.locator(".admin-branding-save").click();
+    await page.waitForFunction(() => !Branding.saving);
     assert.equal(await page.locator(".admin-branding-status").textContent(), "Branding saved.");
     assert.equal(await page.locator(".logo-title").textContent(), "Community <Forum>");
     assert.equal(await page.title(), "Admin - Community <Forum>");
@@ -77,11 +91,40 @@ const root = path.resolve(__dirname, "..");
     assert.equal(await page.locator(".admin-branding-title").inputValue(), "Community <Forum>");
     assert.equal(await page.locator(".admin-branding-hue").inputValue(), "280");
     assert.match(await page.locator(".head .logo img").getAttribute("src"), /^data:image\/png;base64,/);
+    assert.equal(await page.locator('link[rel="icon"]').getAttribute("href"), await page.locator(".head .logo img").getAttribute("src"));
+    assert.equal(await page.evaluate(() => testIcon), await page.evaluate(() => testSettings.branding.favicon));
     console.log("PASS: branding persists, renders title as text, and preserves roles and pins");
+
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="80" height="40"><rect width="80" height="40" fill="green"/></svg>';
+    await page.locator(".admin-branding-file").setInputFiles({name: "logo.svg", mimeType: "image/svg+xml", buffer: Buffer.from(svg)});
+    await page.waitForFunction(() => !Branding.readingLogo);
+    await page.evaluate(() => {
+      Page.site_info.settings.own = true;
+      Page.site_info.content.favicon = "";
+      window.testManifest = {address: "fixture", title: "Existing forum", favicon: "", settings: {admins: ["admin.epix"]}};
+    });
+    await page.locator(".admin-branding-save").click();
+    await page.waitForFunction(() => !Branding.saving);
+    assert.match(await page.locator(".admin-branding-status").textContent(), /Sign and publish content.json/);
+    assert.deepEqual(await page.evaluate(() => testManifest), {
+      address: "fixture", title: "Existing forum", favicon: "data/admin/forum-icon.png", settings: {admins: ["admin.epix"]}
+    });
+    await page.evaluate(() => { Page.site_info.content = testManifest; Page.site_info.settings.own = false; });
+    assert.deepEqual(await page.evaluate(async () => {
+      const image = new Image();
+      image.src = "data:image/png;base64," + testIcon;
+      await image.decode();
+      const canvas = document.createElement("canvas"); canvas.width = canvas.height = 64;
+      const ctx = canvas.getContext("2d"); ctx.drawImage(image, 0, 0);
+      return [image.width, image.height, ...ctx.getImageData(32,32,1,1).data, ctx.getImageData(32,0,1,1).data[3]];
+    }), [64,64,0,128,0,255,0], "the published icon preserves SVG color and aspect ratio");
+    assert.equal(await page.locator('link[rel="icon"]').getAttribute("href"), await page.locator(".head .logo img").getAttribute("src"));
+    console.log("PASS: SVG uploads update the page and signed site icon; old clone metadata is preserved");
 
     await page.evaluate(() => { testFailWrite = true; });
     await page.locator(".admin-branding-title").fill("Retry title");
     await page.locator(".admin-branding-save").click();
+    await page.waitForFunction(() => !Branding.saving);
     assert.match(await page.locator(".admin-branding-status").textContent(), /ready to retry/);
     assert.equal(await page.locator(".admin-branding-save").isEnabled(), true);
     assert.equal(await page.locator(".logo-title").textContent(), "Community <Forum>");
@@ -91,10 +134,12 @@ const root = path.resolve(__dirname, "..");
     await page.evaluate(() => { testFailPublish = true; });
     await page.locator(".admin-branding-title").fill("Locally saved title");
     await page.locator(".admin-branding-save").click();
+    await page.waitForFunction(() => !Branding.saving);
     assert.match(await page.locator(".admin-branding-status").textContent(), /saved locally.*Publishing failed/);
     assert.equal(await page.locator(".logo-title").textContent(), "Locally saved title");
     await page.evaluate(() => { testFailPublish = false; });
     await page.locator(".admin-branding-save").click();
+    await page.waitForFunction(() => !Branding.saving);
     assert.equal(await page.locator(".admin-branding-status").textContent(), "Branding saved.");
     await page.evaluate(() => { testRole = "mod"; });
     const writes = await page.evaluate(() => testWrites.length);
@@ -113,6 +158,7 @@ const root = path.resolve(__dirname, "..");
     await page.locator(".admin-branding-save").click();
     assert.equal(await page.locator(".admin-branding-title").isDisabled(), true);
     assert.equal(await page.locator(".admin-branding-file").isDisabled(), true);
+    await page.waitForFunction(() => !!window.testFinishPublish);
     await page.evaluate(() => { testSettings.branding.title = "Newer concurrent title"; testFinishPublish("ok"); testDelayPublish = false; });
     assert.equal(await page.locator(".logo-title").textContent(), "Newer concurrent title", "publication completion must keep the latest accepted branding");
     assert.equal(await page.locator(".admin-branding-title").isEnabled(), true);

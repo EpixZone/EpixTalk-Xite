@@ -41,7 +41,7 @@
  "domain": "talk.epix",
  "edx": 1,
  "epixnet_version": "0.6.1",
- "favicon": "",
+ "favicon": "data/admin/forum-icon.png",
  "files": {
   "LICENSE": {
    "b3": "e5d78c01bf8de96db29343a9f6771e6eaf18b2392057cea340d985e9e75fb264",
