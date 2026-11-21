@@ -152,7 +152,7 @@ class Branding {
     });
     $(".admin-branding-form").off("submit.branding").on("submit.branding", event => {
       event.preventDefault();
-      this.save();
+      return this.save();
     });
     this.preview();
   }
