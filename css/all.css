@@ -285,7 +285,7 @@ input.text:focus, textarea:focus { border-color: var(--epix-focus); outline: non
 
 /* ---- head ---- */
 
-.head { display: flex; align-items: center; gap: 10px; max-width: 960px; margin: 0 auto 16px auto; min-height: 44px }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; max-width: 960px; margin: 0 auto 16px auto; min-height: 44px }
 .head .logo {
 	display: inline-flex; align-items: center; gap: 10px; color: var(--epix-text);
 	font-size: 18px; font-weight: 700; letter-spacing: -0.2px; line-height: 1
@@ -294,14 +294,13 @@ input.text:focus, textarea:focus { border-color: var(--epix-focus); outline: non
 .head .logo:hover { opacity: 0.85 }
 
 .admin-link {
-	display: block; position: relative; margin-left: auto; padding: 7px 14px;
+	display: block; position: relative; padding: 7px 14px;
 	background-color: var(--epix-surface); border: 1px solid var(--epix-border-strong);
 	border-radius: var(--epix-radius-md); color: var(--epix-text) !important;
 	font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em;
 	text-align: center; transition: background-color 0.15s
 }
 .admin-link:hover { background-color: var(--epix-surface-2); border-bottom: 1px solid var(--epix-border-strong) }
-.admin-link ~ .xid-fab, .admin-link ~ .xid-tag { margin-left: 0 }
 .report-badge {
 	position: absolute; top: -7px; right: -7px;
 	background-color: var(--epix-danger); color: var(--epix-neutral-0);
@@ -385,8 +384,11 @@ input.text:focus, textarea:focus { border-color: var(--epix-focus); outline: non
 .feed-follow:hover { border-color: var(--epix-focus); color: var(--epix-link); transition: none }
 .feed-follow:active { border-color: var(--epix-focus) }
 .feed-follow.following { color: var(--epix-link) }
-.feed-follow-list { vertical-align: 14px }
-.feed-follow-show { float: right; margin-top: -4px; margin-right: 5px }
+.forum-navigation { display: flex; align-items: center; flex-wrap: wrap; gap: 8px }
+.forum-navigation > .list-heading, .forum-navigation > .topic-heading { display: none }
+.page-main .list-heading, .page-topics .list-heading, .page-topic .topic-heading { display: contents }
+.forum-navigation .topics-title, .forum-navigation .topic-title { margin: 0 }
+.forum-navigation .feed-follow { margin-left: 0 }
 
 /* Sort + display-mode segmented controls */
 .topic-toolbar { margin: 6px 0 10px 0; display: flex; flex-wrap: wrap; gap: 8px }
@@ -1142,7 +1144,6 @@ a.topic-search-button.nolink:active, a.topic-new-link.nolink:active {
 	.xid-tag span { max-width: 110px }
 
 	.topics-title, .topic-title { font-size: 20px; min-height: auto; padding-top: 0 }
-	.feed-follow-list { margin-left: 8px; vertical-align: 9px }
 
 	/* Toolbars stay compact segmented controls; each group scrolls on its
 	   own. A solid "\203A" end cap (JS toggles .has-more) covers the cut
@@ -1247,5 +1248,5 @@ body.has-branding.theme-dark { --epix-link: var(--branding-link-dark); --epix-fo
 .admin-branding-preview img { width: 40px; height: 40px; object-fit: contain; }
 .admin-branding-swatch { border-radius: var(--epix-radius-md); padding: 8px 14px; }
 .admin-branding-status { min-height: 1.5em; }
-.head .logo { min-width: 0; overflow-wrap: anywhere; }
+.head .logo { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .head .logo img { object-fit: contain; flex-shrink: 0; }

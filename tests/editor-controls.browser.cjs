@@ -286,3 +286,30 @@ test("a canceled delete releases the object for another edit", async t => {
   });
   assert.equal(await page.locator(".topic-full textarea.editor").count(), 1);
 });
+
+test("mobile admin navigation leaves the forum title readable and keeps Follow beside Admin", async t => {
+  const page = await fixture(t, { admin: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => {
+    $(".logo-title").text("BotanicalManiacal");
+    $(".head").append('<a class="xid-tag"><img alt=""><span>styromaniac.epix</span></a>');
+    Moderation.reported_topics = { example: true };
+    Moderation.reported_comments = {};
+    Page.updateAdminLink();
+  });
+  for (const [route, follow] of [["main", "list"], ["topic", "show"]]) {
+    await page.evaluate(({ route, follow }) => {
+      $("body").removeClass("page-main page-topic").addClass("page-" + route);
+      $(".feed-follow-" + follow).css("display", "inline-block").addClass("following");
+    }, { route, follow });
+    const title = await page.locator(".logo-title").boundingBox();
+    const admin = await page.locator(".admin-link").boundingBox();
+    const nextTo = await page.locator(".feed-follow-" + follow).boundingBox();
+    assert.ok(title.height <= 40, "a custom forum title fits on at most two lines");
+    assert.ok(nextTo.x + nextTo.width <= admin.x && Math.abs(nextTo.y - admin.y) <= 2);
+    assert.equal(await page.locator(".admin-link").getAttribute("href"), "?Admin");
+    assert.equal(await page.locator(".report-badge").textContent(), "1");
+  }
+  await page.evaluate(() => { Moderation.isAdmin = () => false; Page.updateAdminLink(); });
+  assert.equal(await page.locator(".admin-link").isVisible(), false);
+});
