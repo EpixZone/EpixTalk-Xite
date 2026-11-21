@@ -648,7 +648,7 @@ class Admin {
 
   // The settings and their signature commit together. The callback separates
   // command success from a local commit whose later publication failed.
-  updateAdminSettings(modifier_fn, cb) {
+  updateAdminSettings(modifier_fn, cb, beforePublish) {
     var inner_path = "data/admin/admin-settings.json";
     var fail = (message) => {
       Page.cmd("wrapperNotification", ["error", message]);
@@ -690,20 +690,31 @@ class Admin {
           }
           return;
         }
-        // Publication is separate from the signed local commit. Never undo an
-        // accepted edit because peers are unreachable or publishing fails.
-        Page.cmd("sitePublish", {"inner_path": "data/admin/content.json", "sign": false}, (pub_res) => {
-          var success = pub_res === "ok";
-          if (success) {
-            Page.cmd("wrapperNotification", ["done", "Admin settings saved."]);
-          } else {
-            Page.cmd("wrapperNotification", ["error", "Admin settings saved locally, but publishing failed: " + (pub_res?.error || pub_res || "No response.")]);
-          }
-          Moderation.loadAdminSettings(() => {
-            this.loadRoles();
-            if (cb) cb(success, true);
-          });
-        });
+        const publish = () => this.publishAdminSettings(cb);
+        if (beforePublish) {
+          beforePublish().then(publish, error => Moderation.loadAdminSettings(() => {
+            if (cb) cb(false, true, error.message);
+          }));
+        } else {
+          publish();
+        }
+      });
+    });
+  }
+
+  publishAdminSettings(cb) {
+    // Publication is separate from the signed local commit. Never undo an
+    // accepted edit because peers are unreachable or publishing fails.
+    Page.cmd("sitePublish", {"inner_path": "data/admin/content.json", "sign": false}, (pub_res) => {
+      var success = pub_res === "ok";
+      if (success) {
+        Page.cmd("wrapperNotification", ["done", "Admin settings saved."]);
+      } else {
+        Page.cmd("wrapperNotification", ["error", "Admin settings saved locally, but publishing failed: " + (pub_res?.error || pub_res || "No response.")]);
+      }
+      Moderation.loadAdminSettings(() => {
+        this.loadRoles();
+        if (cb) cb(success, true);
       });
     });
   }
