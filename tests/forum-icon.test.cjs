@@ -53,7 +53,7 @@ test("a racing save repairs the icon from the last accepted settings", async () 
     delete state.onWrite;
     state.asset = "concurrent image";
     state.accepted = "latest";
-    return {error: "File changed since it was read."};
+    return Promise.reject({error: "File changed since it was read."});
   };
   await icon.sync();
   assert.equal(state.asset, "latest");
